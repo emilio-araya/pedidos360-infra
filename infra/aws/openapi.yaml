@@ -1,0 +1,570 @@
+openapi: 3.0.3
+info:
+  title: Pedidos360 API
+  version: 1.0.0
+  license:
+    name: Proyecto académico Pedidos360
+  description: >-
+    Contrato público consumido por el frontend a través del BFF. Las operaciones
+    internas de reserva de stock no forman parte de esta API.
+servers:
+  - url: https://api.example.invalid
+    description: Sustituir por el endpoint HTTPS de API Gateway.
+tags:
+  - name: Catalog
+    description: Catálogo de productos.
+  - name: Orders
+    description: Gestión de pedidos.
+security:
+  - EntraJWT: []
+paths:
+  /api/catalog/products:
+    get:
+      tags: [Catalog]
+      operationId: listarProductos
+      summary: Lista productos
+      responses:
+        "2XX":
+          description: Lista de productos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [Catalog]
+      operationId: crearProducto
+      summary: Crea un producto
+      description: Requiere rol Admin u Operador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "2XX":
+          description: Producto creado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/catalog/products/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+    get:
+      tags: [Catalog]
+      operationId: obtenerProducto
+      summary: Obtiene un producto por ID
+      responses:
+        "2XX":
+          description: Producto encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags: [Catalog]
+      operationId: actualizarProducto
+      summary: Actualiza un producto
+      description: Requiere rol Admin u Operador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "2XX":
+          description: Producto actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [Catalog]
+      operationId: eliminarProducto
+      summary: Elimina un producto
+      description: Requiere rol Admin u Operador.
+      responses:
+        "2XX":
+          description: Producto eliminado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/catalog/products/{id}/stock:
+    parameters:
+      - $ref: "#/components/parameters/ProductId"
+    patch:
+      tags: [Catalog]
+      operationId: actualizarStockProducto
+      summary: Actualiza el stock de un producto
+      description: Requiere rol Admin u Operador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockUpdate"
+      responses:
+        "2XX":
+          description: Stock actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/orders:
+    get:
+      tags: [Orders]
+      operationId: listarPedidos
+      summary: Lista pedidos visibles para el usuario autenticado
+      responses:
+        "2XX":
+          description: Lista de pedidos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags: [Orders]
+      operationId: crearPedido
+      summary: Crea un pedido
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreate"
+      responses:
+        "2XX":
+          description: Pedido creado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/orders/{id}:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    get:
+      tags: [Orders]
+      operationId: obtenerPedido
+      summary: Obtiene un pedido visible para el usuario autenticado
+      responses:
+        "2XX":
+          description: Pedido encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags: [Orders]
+      operationId: actualizarPedido
+      summary: Actualiza un pedido
+      description: Reemplaza los ítems y las notas únicamente mientras el pedido está en CREADO.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderUpdate"
+      responses:
+        "2XX":
+          description: Pedido actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    delete:
+      tags: [Orders]
+      operationId: cancelarPedidoCreado
+      summary: Cancela un pedido mientras está en CREADO
+      description: Un Cliente solo puede cancelar su propio pedido no aceptado.
+      responses:
+        "2XX":
+          description: Pedido cancelado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/orders/{id}/status:
+    parameters:
+      - $ref: "#/components/parameters/OrderId"
+    patch:
+      tags: [Orders]
+      operationId: cambiarEstadoPedido
+      summary: Ejecuta una transición operacional de estado
+      description: Requiere rol Admin u Operador y respeta las transiciones funcionales.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderStatusUpdate"
+      responses:
+        "2XX":
+          description: Estado actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    EntraJWT:
+      type: oauth2
+      description: >-
+        Access token delegado de Microsoft Entra ID. La audiencia esperada es el
+        Application (client) ID de la API y el frontend solicita el scope
+        api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user.
+      x-amazon-apigateway-authorizer:
+        type: jwt
+        identitySource: $request.header.Authorization
+        jwtConfiguration:
+          issuer: https://login.microsoftonline.com/1feca74f-8331-414a-bd8d-2d687b22a7b3/v2.0
+          audience:
+            - 150f51db-4084-4979-b1a1-e6a6e7893a01
+      flows:
+        authorizationCode:
+          authorizationUrl: https://login.microsoftonline.com/1feca74f-8331-414a-bd8d-2d687b22a7b3/oauth2/v2.0/authorize
+          tokenUrl: https://login.microsoftonline.com/1feca74f-8331-414a-bd8d-2d687b22a7b3/oauth2/v2.0/token
+          scopes:
+            api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user: Acceso delegado a Pedidos360.
+  parameters:
+    ProductId:
+      name: id
+      in: path
+      required: true
+      description: Identificador UUID del producto.
+      schema:
+        type: string
+        format: uuid
+    OrderId:
+      name: id
+      in: path
+      required: true
+      description: Identificador UUID del pedido.
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Solicitud inválida.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: Token ausente, expirado o no válido.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: El rol o la pertenencia del recurso no permiten la operación.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    NotFound:
+      description: Recurso inexistente o no visible para el solicitante.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Conflict:
+      description: La operación contradice el estado actual o una regla de negocio.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    InternalError:
+      description: Error interno.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Product:
+      type: object
+      required: [id, sku, name, price, stock, active]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sku:
+          type: string
+          example: P-001
+        name:
+          type: string
+          example: Mouse
+        description:
+          type: string
+          nullable: true
+          example: Mouse inalámbrico
+        price:
+          type: number
+          format: double
+          minimum: 0
+          example: 19990.0
+        stock:
+          type: integer
+          format: int32
+          minimum: 0
+          example: 25
+        active:
+          type: boolean
+          example: true
+    ProductInput:
+      type: object
+      required: [sku, name, price, stock, active]
+      properties:
+        sku:
+          type: string
+          example: P-001
+        name:
+          type: string
+          example: Mouse
+        description:
+          type: string
+          nullable: true
+          example: Mouse inalámbrico
+        price:
+          type: number
+          format: double
+          minimum: 0
+          example: 19990.0
+        stock:
+          type: integer
+          format: int32
+          minimum: 0
+          example: 25
+        active:
+          type: boolean
+          example: true
+    StockUpdate:
+      type: object
+      required: [stock]
+      additionalProperties: false
+      properties:
+        stock:
+          type: integer
+          format: int32
+          minimum: 0
+    OrderCreate:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OrderCreateItem"
+        notes:
+          type: string
+          example: Entregar después de las 18:00
+    OrderCreateItem:
+      type: object
+      required: [productId, quantity]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        quantity:
+          type: integer
+          format: int32
+          minimum: 1
+          example: 2
+    OrderUpdate:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/OrderCreateItem"
+        notes:
+          type: string
+          maxLength: 1000
+    OrderStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+    Order:
+      type: object
+      required:
+        [id, orderNumber, customerId, status, items, total, stockReserved, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        orderNumber:
+          type: string
+          example: PED-ABC123
+        customerId:
+          type: string
+          description: Claim oid o sub del cliente.
+          example: oid-del-cliente
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        total:
+          type: number
+          format: double
+          minimum: 0
+          example: 39980.0
+        notes:
+          type: string
+        stockReserved:
+          type: boolean
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-09-23T18:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-09-23T18:00:00Z"
+    OrderItem:
+      type: object
+      required: [productId, productName, quantity, unitPrice, subtotal]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        productName:
+          type: string
+          example: Mouse
+        quantity:
+          type: integer
+          format: int32
+          minimum: 1
+          example: 2
+        unitPrice:
+          type: number
+          format: double
+          minimum: 0
+          example: 19990.0
+        subtotal:
+          type: number
+          format: double
+          minimum: 0
+          example: 39980.0
+    OrderStatus:
+      type: string
+      enum: [CREADO, ACEPTADO, EN_PREPARACION, DESPACHADO, ENTREGADO, CANCELADO]
+    Problem:
+      type: object
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference

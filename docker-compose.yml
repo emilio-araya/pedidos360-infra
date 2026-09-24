@@ -1,0 +1,161 @@
+name: pedidos360
+
+services:
+  oracle:
+    image: gvenzl/oracle-free:23-slim-faststart
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD:?Define ORACLE_PASSWORD en .env}
+      ORACLE_DATABASE: ${ORACLE_DATABASE:-FREEPDB1}
+      APP_USER: ${CATALOG_DB_USERNAME:?Define CATALOG_DB_USERNAME en .env}
+      APP_USER_PASSWORD: ${CATALOG_DB_PASSWORD:?Define CATALOG_DB_PASSWORD en .env}
+      ORDERS_DB_USERNAME: ${ORDERS_DB_USERNAME:?Define ORDERS_DB_USERNAME en .env}
+      ORDERS_DB_PASSWORD: ${ORDERS_DB_PASSWORD:?Define ORDERS_DB_PASSWORD en .env}
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./scripts/ensure-oracle-users.sh:/container-entrypoint-startdb.d/10-ensure-users.sh:ro
+    shm_size: "1gb"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          printf '%s\n' 'WHENEVER SQLERROR EXIT SQL.SQLCODE' 'SELECT 1 FROM dual;' 'EXIT;' |
+          "$${ORACLE_HOME}/bin/sqlplus" -s "$${APP_USER}/$${APP_USER_PASSWORD}@localhost:1521/$${ORACLE_DATABASE:-FREEPDB1}" > /dev/null
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 90s
+    stop_grace_period: 60s
+    networks:
+      - backend
+    restart: unless-stopped
+
+  catalog:
+    build:
+      context: ../pedidos360-catalog
+      dockerfile: Dockerfile
+    image: pedidos360/catalog:local
+    environment:
+      SPRING_PROFILES_ACTIVE: cloud
+      PORT: "8082"
+      ENTRA_ISSUER: ${ENTRA_ISSUER:?Define ENTRA_ISSUER en .env}
+      ENTRA_API_AUDIENCE: ${ENTRA_API_AUDIENCE:?Define ENTRA_API_AUDIENCE en .env}
+      ORACLE_URL: jdbc:oracle:thin:@//oracle:1521/${ORACLE_DATABASE:-FREEPDB1}
+      ORACLE_USERNAME: ${CATALOG_DB_USERNAME:?Define CATALOG_DB_USERNAME en .env}
+      ORACLE_PASSWORD: ${CATALOG_DB_PASSWORD:?Define CATALOG_DB_PASSWORD en .env}
+    expose:
+      - "8082"
+    depends_on:
+      oracle:
+        condition: service_healthy
+    networks:
+      - backend
+      - egress
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8082'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    restart: unless-stopped
+
+  orders:
+    build:
+      context: ../pedidos360-orders
+      dockerfile: Dockerfile
+    image: pedidos360/orders:local
+    environment:
+      SPRING_PROFILES_ACTIVE: oracle
+      SERVER_PORT: "8081"
+      ENTRA_ISSUER: ${ENTRA_ISSUER:?Define ENTRA_ISSUER en .env}
+      ENTRA_API_AUDIENCE: ${ENTRA_API_AUDIENCE:?Define ENTRA_API_AUDIENCE en .env}
+      ORDERS_DB_URL: jdbc:oracle:thin:@//oracle:1521/${ORACLE_DATABASE:-FREEPDB1}
+      ORDERS_DB_USERNAME: ${ORDERS_DB_USERNAME:?Define ORDERS_DB_USERNAME en .env}
+      ORDERS_DB_PASSWORD: ${ORDERS_DB_PASSWORD:?Define ORDERS_DB_PASSWORD en .env}
+      CATALOG_SERVICE_URL: http://catalog:8082
+    expose:
+      - "8081"
+    depends_on:
+      oracle:
+        condition: service_healthy
+      catalog:
+        condition: service_healthy
+    networks:
+      - backend
+      - egress
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8081'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 45s
+    restart: unless-stopped
+
+  bff:
+    build:
+      context: ../pedidos360-bff
+      dockerfile: Dockerfile
+    image: pedidos360/bff:local
+    environment:
+      SPRING_PROFILES_ACTIVE: cloud
+      JWT_MODE: entra
+      PORT: "8080"
+      SERVER_PORT: "8080"
+      ENTRA_ISSUER: ${ENTRA_ISSUER:?Define ENTRA_ISSUER en .env}
+      ENTRA_API_AUDIENCE: ${ENTRA_API_AUDIENCE:?Define ENTRA_API_AUDIENCE en .env}
+      ORDERS_SERVICE_URL: http://orders:8081
+      CATALOG_SERVICE_URL: http://catalog:8082
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4200}
+    ports:
+      - "127.0.0.1:${BFF_PORT:-8080}:8080"
+    depends_on:
+      catalog:
+        condition: service_healthy
+      orders:
+        condition: service_healthy
+    networks:
+      - backend
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../pedidos360-frontend
+      dockerfile: Dockerfile
+      args:
+        ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:?Define ENTRA_TENANT_ID en .env}
+        ENTRA_CLIENT_ID: ${ENTRA_CLIENT_ID:?Define ENTRA_CLIENT_ID en .env}
+        API_SCOPE: ${API_SCOPE:-api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user}
+        API_BASE_URL: ${API_BASE_URL:?Define API_BASE_URL en .env}
+        REDIRECT_URI: ${REDIRECT_URI:-http://localhost:4200/login}
+        POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI:-http://localhost:4200/login}
+    image: pedidos360/frontend:local
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-4200}:80"
+    depends_on:
+      bff:
+        condition: service_healthy
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+networks:
+  backend:
+    internal: true
+  egress: {}
+  edge: {}
+
+volumes:
+  oracle-data:
+    name: ${COMPOSE_PROJECT_NAME:-pedidos360}_oracle-data

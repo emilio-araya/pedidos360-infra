@@ -1,0 +1,78 @@
+name: AWS Terraform
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Aplicar el plan después de aprobar la protección del environment'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: pedidos360-aws-production
+  cancel-in-progress: false
+
+jobs:
+  terraform:
+    name: Plan and optional apply
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: aws-production
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_STATE_KEY: ${{ vars.TF_STATE_KEY }}
+      TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
+      TF_VAR_AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_VAR_ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
+      TF_VAR_ENTRA_API_AUDIENCE: ${{ vars.ENTRA_API_AUDIENCE }}
+      TF_VAR_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
+      TF_VAR_BFF_INTEGRATION_URI: ${{ vars.BFF_INTEGRATION_URI }}
+      TF_VAR_BFF_TLS_SERVER_NAME: ${{ vars.BFF_TLS_SERVER_NAME }}
+      TF_VAR_VPC_SUBNET_IDS: ${{ vars.VPC_SUBNET_IDS }}
+      TF_VAR_VPC_SECURITY_GROUP_IDS: ${{ vars.VPC_SECURITY_GROUP_IDS }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure AWS with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+      - name: Check repository configuration
+        run: |
+          test -n "$AWS_DEPLOY_ROLE_ARN" || { echo 'Falta AWS_DEPLOY_ROLE_ARN'; exit 1; }
+          test -n "$TF_STATE_BUCKET" || { echo 'Falta TF_STATE_BUCKET'; exit 1; }
+          test -n "$TF_STATE_KEY" || { echo 'Falta TF_STATE_KEY'; exit 1; }
+          test -n "$TF_LOCK_TABLE" || { echo 'Falta TF_LOCK_TABLE'; exit 1; }
+        env:
+          AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          TF_STATE_KEY: ${{ vars.TF_STATE_KEY }}
+          TF_LOCK_TABLE: ${{ vars.TF_LOCK_TABLE }}
+      - name: Initialize remote state
+        run: |
+          terraform -chdir=infra/aws/terraform init \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
+            -backend-config="dynamodb_table=${TF_LOCK_TABLE}" \
+            -backend-config="encrypt=true"
+      - name: Format and validate
+        run: |
+          terraform -chdir=infra/aws/terraform fmt -check -recursive
+          terraform -chdir=infra/aws/terraform validate
+      - name: Create plan
+        run: terraform -chdir=infra/aws/terraform plan -input=false -out=tfplan
+      - name: Apply approved plan
+        if: ${{ inputs.apply }}
+        run: terraform -chdir=infra/aws/terraform apply -input=false -auto-approve tfplan
