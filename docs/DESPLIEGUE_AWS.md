@@ -1,18 +1,14 @@
 # Despliegue en AWS
 
-## Alcance y advertencia principal
+## Alcance
 
-La especificación define la frontera de seguridad, no una topología VPC completa. El despliegue backend de producción todavía requiere diseñar e implementar, como mínimo:
+La configuración de `infra/aws/terraform` crea la infraestructura del Caso 0 completa: VPC con subredes públicas, de aplicación y de datos; NAT Gateway y VPC Endpoints; ALB interno; cluster de ECS Fargate con `bff`, `catalog` y `orders`; descubrimiento privado con Cloud Map; Secrets Manager con KMS; repositorios ECR; API Gateway HTTP API con los dos authorizers; y el frontend estático en S3 con CloudFront.
 
-- una VPC con subredes públicas y privadas;
-- una plataforma de ejecución privada, por ejemplo ECS/Fargate o equivalente;
-- resolución privada y conectividad segura entre BFF, catalog y orders;
-- Oracle privado y gestionado, o una alternativa Oracle equivalente;
-- IAM, secretos, observabilidad, backups, alta disponibilidad y pipelines de despliegue.
+**API Gateway es la única URL pública del backend.** BFF, catalog, orders y Oracle se ejecutan sin IP pública, sin listener público y sin IP flotante. El frontend se publica como aplicación web estática: es una superficie pública distinta del backend y no es una ruta alternativa hacia los servicios.
 
-El Terraform incluido en `infra/aws/terraform` crea **solo el esqueleto de API Gateway HTTP API**. No crea una red ni hace desplegable el backend por sí solo.
+> El despliegue se hace en dos etapas. `infra/aws/terraform/bootstrap` se aplica una vez, con estado local, y crea el bucket de estado remoto, la tabla de bloqueo, el proveedor OIDC de GitHub y el rol de despliegue. No puede ir en la misma etapa porque un backend remoto no puede crear su propio contenedor.
 
-> **API Gateway debe ser la única URL pública del backend.** BFF, catalog, orders y Oracle no pueden tener acceso desde Internet, IP pública, listener público ni URL privada entregada al frontend. El frontend puede publicarse como aplicación web estática; es una superficie pública distinta del backend.
+La especificación define la frontera de seguridad; esta configuración implementa una topología concreta. Sigue siendo responsabilidad del equipo antes de producción: dimensionar la VPC al crecimiento esperado, definir el modelo de licencia de Oracle, y separar cuentas si la organización lo exige.
 
 ## Arquitectura objetivo
 
@@ -75,20 +71,24 @@ COGNITO_DOMAIN=us-east-1umehprydi.auth.us-east-1.amazoncognito.com
 
 Los servicios rechazan un token de Cognito en `/api/**` y un token de Entra en `/aws/api/**`. El frontend solo manda el access token, nunca el ID token.
 
-## 2. Diseñar la red privada
+## 2. Red privada
 
-Antes de aplicar cualquier Terraform se debe decidir y documentar:
+La configuración crea la red y el runtime. Estos son los puntos de decisión:
 
-1. **Cuentas y regiones**: preferiblemente cuentas separadas para red, datos, workloads y seguridad según el nivel de aislamiento requerido.
-2. **VPC y CIDR**: subredes en varias AZ para BFF, catalog/orders y datos; tablas de rutas y salida controlada.
-3. **Runtime**: ECS/Fargate en subredes privadas es una opción; también puede usarse EKS u otro runtime equivalente.
-4. **Descubrimiento de servicios**: Cloud Map, Service Connect o DNS privado, sin nombres públicos.
-5. **Entrada al BFF**: target group/service discovery privado. Solo API Gateway debe poder alcanzarlo mediante el mecanismo privado elegido.
-6. **Conexión API Gateway–BFF**: la infraestructura real debe implementar y probar el mecanismo privado compatible con API Gateway. Puede exigir recursos y configuración adicionales que no están en el esqueleto actual.
-7. **Salida**: Entra JWKS, repositorios de imágenes y servicios de observabilidad necesitan una ruta controlada; no abrir todo el tráfico de salida.
-8. **Security groups**: reglas por puerto y origen mínimo. Sin `0.0.0.0/0` hacia microservicios u Oracle.
+1. **Región y cuenta**: `us-east-1` por defecto. Separa cuentas para red, datos y workloads si la organización lo requiere.
+2. **VPC y CIDR**: `10.20.0.0/16` con tres capas de subredes /24 por Availability Zone (públicas 0-1, aplicación 10-11, datos 20-21). Cambiable con `vpc_cidr` y `availability_zone_names`.
+3. **Runtime**: ECS Fargate en subredes privadas con `assign_public_ip = false` y plataforma 1.4.0.
+4. **Descubrimiento**: AWS Cloud Map con namespace privado. `catalog.pedidos360.local` y `orders.pedidos360.local` no resuelven desde Internet.
+5. **Entrada al BFF**: ALB de tipo application con `internal = true`, target group de tipo `ip` sobre el puerto 8080 y health check en `/actuator/health`. El security group del ALB solo acepta tráfico del security group del VPC Link.
+6. **Conexión API Gateway–BFF**: integración `HTTP_PROXY` con `connection_type = "VPC_LINK"`. El `integration_uri` es el ARN del listener del ALB, porque API Gateway rechaza URLs. Para usar TLS en el tramo privado hay que crear un listener HTTPS con certificado ACM y definir `bff_tls_server_name`.
+7. **Salida**: un NAT Gateway (configurable con `nat_gateway_count`) más VPC Endpoints para ECR, CloudWatch Logs y Secrets Manager. El tráfico a los JWKS de Entra y Cognito sale por el NAT, solo por 443.
+8. **Security groups**: ninguna regla de puerto de aplicación acepta `0.0.0.0/0`. El único oráculo de la red es el SG del VPC Link.
 
-El valor `bff_integration_uri` del esqueleto debe ser el ARN de un listener/Service Connect privado. `vpc_subnet_ids` y `vpc_security_group_ids` crean el VPC Link, pero no reemplazan la implementación de la VPC ni del listener.
+Detalles de operación:
+
+- Los VPC Links son inmutables. Cambiar subredes o security groups obliga a recrearlos.
+- Si no se traffic por el VPC Link durante 60 días, AWS lo marca `INACTIVE` y elimina sus interfaces. Al recibir tráfico nuevamente lo reprovisiona, lo que puede tardar minutos.
+- Con `enable_vpc_endpoints = false` las tareas siguen funcionando por el NAT, pero sale más tráfico a Internet.
 
 ## 3. Ejecutar los servicios privados
 
@@ -119,64 +119,83 @@ El compose local usa una instancia Oracle Free de desarrollo y un volumen local;
 
 ## 4. Configurar API Gateway
 
-El esqueleto crea:
+La configuración crea:
 
-- HTTP API en HTTPS;
+- HTTP API en HTTPS, con CORS para orígenes exactos (el dominio de CloudFront se agrega automáticamente);
 - authorizer JWT de Entra para `/api/**`;
-- authorizer JWT de Cognito para `/aws/api/**`;
-- CORS para orígenes exactos;
-- integración proxy al BFF;
+- authorizer JWT de Cognito para `/aws/api/**`, con requirement de scope `openid`;
+- VPC Link en las subredes privadas de aplicación;
+- integración privada `HTTP_PROXY` hacia el ALB interno;
 - rutas explícitas `/api/orders/*`, `/api/catalog/*` y sus equivalentes `/aws/api/*`;
-- repositorios ECR para `frontend`, `bff`, `catalog` y `orders`;
-- stage `$default` con auto deploy.
+- repositorios ECR para `bff`, `catalog` y `orders`;
+- stage `$default` con auto deploy, métricas, throttling y access logs a CloudWatch.
 
-No crea ruta `$default`, no expone rutas internas y delega en BFF/microservicios la autorización por rol y por pertenencia.
+No crea ruta `$default`, no expone rutas internas y delega en BFF y microservicios la autorización por rol y por pertenencia. El frontend ya no se publica como imagen: se sirve desde S3 y CloudFront.
 
-### Integración privada pendiente
+### Integración privada
 
-La implementación completa debe añadir los recursos de red y el tipo de integración privada que se adopte. Antes de `terraform apply` se deben probar:
+Queda por probar en la cuenta real:
 
-- resolución privada y TLS hacia el BFF;
+- propagación de `Authorization` desde el gateway hasta el BFF sin exponerlo a otro servicio público;
 - timeouts y respuestas 503/504 con alarmas;
-- propagación de `Authorization` sin exponerlo a otro servicio público;
 - ausencia de acceso desde Internet a BFF, catalog y orders;
 - estado y rollback de la integración.
 
-La URL pública que se entrega a frontend y usuarios es el output `api_endpoint` de API Gateway. No se construye `API_BASE_URL` con la URL de ECS, ALB interno, Cloud Map ni RDS.
+La URL pública que se entrega al frontend y a los usuarios es el output `api_endpoint`. No se construye `API_BASE_URL` con la URL de ECS, del ALB interno, de Cloud Map ni de RDS.
 
-## 5. Aplicar el esqueleto de API Gateway
+## 5. Aplicar la configuración
 
-Validación sin crear infraestructura:
+### 5.1 Bootstrap
+
+```bash
+cd infra/aws/terraform/bootstrap
+cp terraform.tfvars.example terraform.tfvars
+# completar github_org y github_repositories
+terraform init
+terraform validate
+terraform plan -out=bootstrap.tfplan
+terraform apply bootstrap.tfplan
+```
+
+Anota los outputs `state_bucket`, `state_lock_table` y `github_deploy_role_arn`.
+
+### 5.2 Infraestructura principal
 
 ```bash
 cd infra/aws/terraform
-terraform init -backend=false
+cp terraform.tfvars.example terraform.tfvars
+# completar entra_tenant_id, entra_api_audience y oracle_host
+
+terraform init \
+  -backend-config="bucket=<state_bucket>" \
+  -backend-config="key=pedidos360/terraform.tfstate" \
+  -backend-config="region=us-east-1" \
+  -backend-config="dynamodb_table=<lock_table>" \
+  -backend-config="encrypt=true"
+
 terraform fmt -check -recursive
-terraform validate
-```
-
-Configurar de forma local y no versionada:
-
-- `aws_region`;
-- `entra_tenant_id`;
-- `entra_api_audience`;
-- `cognito_user_pool_id`, `cognito_region`, `cognito_issuer`, `cognito_api_audience` y `cognito_authorization_scopes` (JSON, por ejemplo `["openid"]`);
-- `allowed_origins`;
-- `bff_integration_uri` con el ARN privado del listener/Service Connect;
-- `bff_tls_server_name`;
-- `vpc_subnet_ids` y `vpc_security_group_ids` de la VPC existente.
-
-Después de añadir el backend remoto y la red:
-
-```bash
-terraform init
 terraform validate
 terraform plan -out=tfplan
 terraform show tfplan
 terraform apply tfplan
 ```
 
-No aplicar el esqueleto contra un BFF público. Configurar un backend Terraform remoto cifrado con bloqueo antes de compartir el estado.
+El plan crea del orden de 130 recursos. Revísalo antes de aplicar: NAT, endpoints y Fargate tienen costo desde el primer día.
+
+### 5.3 Secretos de base de datos
+
+Los Secrets se crean vacíos a propósito; Terraform no genera ni guarda contraseñas. ECS no podrá iniciar las tareas hasta que se carguen:
+
+```bash
+umask 077
+printf '{"username":"<CATALOG_DB_USER>","password":"<PASSWORD>"}' > /tmp/secret.json
+aws secretsmanager put-secret-value \
+  --secret-id pedidos360/catalog/db \
+  --secret-string file:///tmp/secret.json
+shred -u /tmp/secret.json
+```
+
+Repite con `pedidos360/orders/db`. Usa un archivo temporal y no la contraseña en la línea de comandos: queda en el historial y en la lista de procesos.
 
 ## 6. Publicar el frontend
 
@@ -198,32 +217,45 @@ Configurar CORS en API Gateway y BFF con la misma allowlist exacta, por ejemplo 
 
 ## 7. Publicación de imágenes y GitHub OIDC
 
-Antes de ejecutar `publish-ecr.yml`, configurar en el environment de GitHub `aws-production` únicamente variables públicas y el ARN del rol:
+El rol OIDC y el proveedor los crea `bootstrap`. La política de confianza acepta únicamente los repositorios declarados y el environment `aws-production`; los workflows no usan llaves de acceso.
+
+Crear el environment en GitHub con **required reviewers** y declarar estas variables (ninguna es secreta):
 
 ```text
 AWS_REGION=us-east-1
 AWS_ACCOUNT_ID=<account-id>
-AWS_DEPLOY_ROLE_ARN=arn:aws:iam::<account-id>:role/<github-oidc-role>
-FRONTEND_ECR_REPOSITORY=pedidos360-api-frontend
+AWS_DEPLOY_ROLE_ARN=<output github_deploy_role_arn>
 BFF_ECR_REPOSITORY=pedidos360-api-bff
 CATALOG_ECR_REPOSITORY=pedidos360-api-catalog
 ORDERS_ECR_REPOSITORY=pedidos360-api-orders
+FRONTEND_BUCKET=<output frontend_bucket>
+CLOUDFRONT_DISTRIBUTION_ID=<id de la distribución>
+API_BASE_URL=<output api_endpoint>
 ```
 
-El rol IAM debe trusting `repo:emilio-araya/pedidos360-*:*` mediante OIDC y permitir solo login/artifact push en esos repositorios. No guardar AWS access keys, client secrets ni tokens en GitHub Secrets. El frontend requiere además sus variables públicas de build (`API_BASE_URL`, callbacks, App Client y dominio Cognito).
+Y en el environment `aws-production` del repositorio de infraestructura, para el workflow de Terraform:
+
+```text
+TF_STATE_BUCKET=<output state_bucket>
+TF_STATE_KEY=pedidos360/terraform.tfstate
+TF_LOCK_TABLE=<output state_lock_table>
+ENTRA_TENANT_ID=1feca74f-8331-414a-bd8d-2d687b22a7b3
+ENTRA_API_AUDIENCE=150f51db-4084-4979-b1a1-e6a6e7893a01
+ORACLE_HOST=<host de Oracle>
+```
+
+No guardar AWS access keys, client secrets ni tokens en GitHub Secrets. El frontend requiere además sus variables públicas de build (`API_BASE_URL`, callbacks, App Client y dominio Cognito).
 
 ## 8. Secuencia de despliegue
 
-1. Desplegar migraciones Oracle de forma compatible y verificadas.
-2. Desplegar catalog y orders sin ingress público.
-3. Verificar conectividad privada, salud, JWT y llamadas internas de stock.
-4. Desplegar BFF sin ingress público.
-5. Completar la integración privada API Gateway–BFF y aplicar/verificar las rutas Entra y Cognito.
-6. Construir/publicar las cuatro imágenes en ECR mediante los workflows `publish-ecr.yml` usando GitHub OIDC.
-7. Desplegar el frontend con `API_BASE_URL` igual al endpoint de API Gateway, `REDIRECT_URI`/`POST_LOGOUT_REDIRECT_URI` de Entra y `COGNITO_REDIRECT_URI`/`COGNITO_LOGOUT_URI` de Cognito.
-8. Ejecutar smoke tests y pruebas de seguridad de `docs/ENTREGA_Y_EVIDENCIAS.md`.
-
-No desplegar una versión que requiera el nuevo contrato antes de que estén disponibles sus dependencias.
+1. Aplicar `bootstrap` y anotar sus outputs.
+2. Aplicar la infraestructura principal y **cargar los secretos** de base de datos.
+3. Crear los usuarios de aplicación en Oracle; ninguno de los microservicios usa el usuario maestro.
+4. Verificar que las tareas de catalog y orders inician sanas y que Flyway crea el esquema.
+5. Publicar las imágenes de `bff`, `catalog` y `orders` con `publish-ecr.yml` usando GitHub OIDC.
+6. Fijar `container_image_tag` al SHA publicado y volver a aplicar, para que el despliegue sea reproducible.
+7. Publicar el frontend con `deploy-frontend.yml` y registrar en Entra y en el App Client de Cognito los callbacks que entrega el output `frontend_cognito_redirect_uris`.
+8. Ejecutar los smoke tests y las pruebas de seguridad de `docs/ENTREGA_Y_EVIDENCIAS.md`.
 
 ## 9. Verificación desde fuera
 

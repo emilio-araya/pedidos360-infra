@@ -15,7 +15,9 @@ Este documento define el inventario, las verificaciones y el paquete de evidenci
 - `../pedidos360-frontend/`, `../pedidos360-bff/`, `../pedidos360-catalog/` y `../pedidos360-orders/`: proyectos hermanos.
 - `infra/aws/openapi.yaml`: contrato público de API con namespaces Entra y Cognito.
 - `infra/aws/terraform/README.md`: alcance y límites del Terraform.
-- `infra/aws/terraform/*.tf`: API Gateway HTTP API, dos authorizers, ECR y esqueleto de integración privada.
+- `infra/aws/terraform/*.tf`: VPC con tres capas de subredes, NAT, VPC Endpoints, security groups, ALB interno, ECS Fargate (bff, catalog, orders), Cloud Map, Secrets Manager con KMS, RDS Oracle opcional, frontend estático en S3/CloudFront, API Gateway HTTP API con dos authorizers y repositorios ECR.
+- `infra/aws/terraform/bootstrap/`: bucket de estado, tabla de bloqueo, proveedor OIDC de GitHub y rol de despliegue. Se aplica una vez, con estado local.
+- `../pedidos360-frontend/.github/workflows/deploy-frontend.yml`: publicación del SPA en S3 e invalidación de CloudFront.
 
 ### Proyectos
 
@@ -66,6 +68,9 @@ bash -n scripts/stop-local.sh
 terraform -chdir=infra/aws/terraform fmt -check -recursive
 terraform -chdir=infra/aws/terraform init -backend=false
 terraform -chdir=infra/aws/terraform validate
+terraform -chdir=infra/aws/terraform/bootstrap fmt -check -recursive
+terraform -chdir=infra/aws/terraform/bootstrap init -backend=false
+terraform -chdir=infra/aws/terraform/bootstrap validate
 ```
 
 Además del parser YAML, conviene validar `infra/aws/openapi.yaml` con un linter OpenAPI y ejecutar `shellcheck` si está disponible.
@@ -260,4 +265,11 @@ La entrega está lista para aceptación cuando:
 - [ ] el paquete de evidencias está completo y saneado;
 - [ ] la operación, costos, alta disponibilidad y recuperación de Oracle están definidos antes de producción.
 
-La instalación de AWS continúa pendiente hasta que exista el diseño de red privada, ECS o equivalente, Oracle gestionado y el mecanismo probado de integración privada hacia BFF. El esqueleto de API Gateway no sustituye ese trabajo.
+La configuración de Terraform cubre red, runtime, entrada privada, secretos y frontend. Sigue pendiente antes de cerrar la entrega:
+
+- [ ] bootstrap aplicado y outputs anotados en las variables de GitHub;
+- [ ] plan revisado y aprobado, con el costo mensual estimado aceptado;
+- [ ] secretos de base de datos cargados y usuarios de aplicación creados en Oracle (no el maestro);
+- [ ] imágenes publicadas en ECR por OIDC y `container_image_tag` fijado al SHA;
+- [ ] callbacks de CloudFront registrados en la app de Entra y en el App Client de Cognito;
+- [ ] modelo de licencia de Oracle decidido antes de habilitar `create_rds_oracle`.

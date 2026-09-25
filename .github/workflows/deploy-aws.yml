@@ -8,6 +8,11 @@ on:
         required: true
         default: false
         type: boolean
+      image_tag:
+        description: 'Tag de las imágenes en ECR que se despliegan (vacío = latest)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -21,9 +26,10 @@ jobs:
   terraform:
     name: Plan and optional apply
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     environment: aws-production
     env:
+      TF_IN_AUTOMATION: 'true'
       AWS_REGION: ${{ vars.AWS_REGION }}
       TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
       TF_STATE_KEY: ${{ vars.TF_STATE_KEY }}
@@ -36,11 +42,19 @@ jobs:
       TF_VAR_COGNITO_ISSUER: ${{ vars.COGNITO_ISSUER || 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI' }}
       TF_VAR_COGNITO_API_AUDIENCE: ${{ vars.COGNITO_API_AUDIENCE || '59be26pgg5ginu2sutr8eetgjg' }}
       TF_VAR_COGNITO_AUTHORIZATION_SCOPES: ${{ vars.COGNITO_AUTHORIZATION_SCOPES || '["openid"]' }}
-      TF_VAR_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
-      TF_VAR_BFF_INTEGRATION_URI: ${{ vars.BFF_INTEGRATION_URI }}
-      TF_VAR_BFF_TLS_SERVER_NAME: ${{ vars.BFF_TLS_SERVER_NAME }}
-      TF_VAR_VPC_SUBNET_IDS: ${{ vars.VPC_SUBNET_IDS }}
-      TF_VAR_VPC_SECURITY_GROUP_IDS: ${{ vars.VPC_SECURITY_GROUP_IDS }}
+      TF_VAR_API_NAME: ${{ vars.API_NAME || 'pedidos360-api' }}
+      TF_VAR_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS || '[]' }}
+      TF_VAR_VPC_CIDR: ${{ vars.VPC_CIDR || '10.20.0.0/16' }}
+      TF_VAR_AVAILABILITY_ZONE_NAMES: ${{ vars.AVAILABILITY_ZONE_NAMES || '["us-east-1a","us-east-1b"]' }}
+      TF_VAR_NAT_GATEWAY_COUNT: ${{ vars.NAT_GATEWAY_COUNT || '1' }}
+      TF_VAR_ENABLE_VPC_ENDPOINTS: ${{ vars.ENABLE_VPC_ENDPOINTS || 'true' }}
+      TF_VAR_CONTAINER_IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
+      TF_VAR_SERVICE_DESIRED_COUNT: ${{ vars.SERVICE_DESIRED_COUNT || '2' }}
+      TF_VAR_ORACLE_HOST: ${{ vars.ORACLE_HOST || '' }}
+      TF_VAR_ORACLE_SERVICE_NAME: ${{ vars.ORACLE_SERVICE_NAME || 'FREEPDB1' }}
+      TF_VAR_CREATE_RDS_ORACLE: ${{ vars.CREATE_RDS_ORACLE || 'false' }}
+      TF_VAR_RDS_ORACLE_LICENSE_MODEL: ${{ vars.RDS_ORACLE_LICENSE_MODEL || 'bring-your-own-license' }}
+      TF_VAR_LOG_RETENTION_DAYS: ${{ vars.LOG_RETENTION_DAYS || '30' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -78,6 +92,23 @@ jobs:
           terraform -chdir=infra/aws/terraform validate
       - name: Create plan
         run: terraform -chdir=infra/aws/terraform plan -input=false -out=tfplan
+      - name: Summarize plan
+        run: |
+          terraform -chdir=infra/aws/terraform show -no-color tfplan > plan.txt
+          {
+            echo '### Plan'
+            echo '```'
+            cat plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: |
+            infra/aws/terraform/tfplan
+            infra/aws/terraform/plan.txt
+          retention-days: 14
       - name: Apply approved plan
         if: ${{ inputs.apply }}
         run: terraform -chdir=infra/aws/terraform apply -input=false -auto-approve tfplan

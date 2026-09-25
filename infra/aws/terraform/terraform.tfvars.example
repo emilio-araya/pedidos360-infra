@@ -1,0 +1,49 @@
+# Copiar este archivo a terraform.tfvars y completar los valores.
+# NO se sube al repositorio: terraform.tfvars está en .gitignore.
+#
+# Ningún valor de este archivo es un secreto. Las contraseñas de Oracle se
+# cargan directamente en Secrets Manager con la CLI de AWS, nunca aquí.
+
+aws_region   = "us-east-1"
+project_name = "pedidos360"
+api_name     = "pedidos360-api"
+
+# Identidad de Microsoft Entra ID (valores de desarrollo; owners de app registration).
+entra_tenant_id     = "1feca74f-8331-414a-bd8d-2d687b22a7b3"
+entra_api_audience  = "150f51db-4084-4979-b1a1-e6a6e7893a01"
+
+# Amazon Cognito ya existente en us-east-1.
+cognito_user_pool_id        = "us-east-1_UmEhPRYdI"
+cognito_region              = "us-east-1"
+cognito_issuer              = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI"
+cognito_api_audience        = "59be26pgg5ginu2sutr8eetgjg"
+cognito_authorization_scopes = ["openid"]
+
+# Red
+vpc_cidr                 = "10.20.0.0/16"
+availability_zone_names  = ["us-east-1a", "us-east-1b"]
+nat_gateway_count        = 1
+enable_vpc_endpoints     = true
+service_discovery_namespace = "pedidos360.local"
+
+# CORS: el dominio de CloudFront se agrega automáticamente.
+allowed_origins = []
+
+# Ejecución
+container_image_tag    = "latest"
+service_desired_count  = 2
+enable_autoscaling     = true
+log_retention_days     = 30
+
+# Base de datos.
+# RDS no admite la imagen Oracle Free del compose local: si create_rds_oracle
+# es false, hay que indicar un oracle_host propio.
+create_rds_oracle = false
+oracle_host       = null
+oracle_port       = 1521
+oracle_service_name = "FREEPDB1"
+
+tags = {
+  Caso   = "0"
+  Proyecto = "Pedidos360"
+}

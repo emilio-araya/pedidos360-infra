@@ -1,0 +1,17 @@
+# Copiar este archivo a terraform.tfvars y completar los valores.
+# NO se sube al repositorio: terraform.tfvars está en .gitignore.
+
+github_org  = "emilio-araya"
+github_repositories = [
+  "pedidos360-frontend",
+  "pedidos360-bff",
+  "pedidos360-catalog",
+  "pedidos360-orders",
+  "pedidos360-infra",
+]
+
+aws_region    = "us-east-1"
+project_name  = "pedidos360"
+
+# Debe coincidir con `environment:` en los workflows.
+github_environment = "aws-production"

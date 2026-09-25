@@ -22,11 +22,17 @@ jobs:
         with:
           terraform_version: 1.6.6
       - name: Terraform format
-        run: terraform -chdir=infra/aws/terraform fmt -check -recursive
+        run: |
+          terraform -chdir=infra/aws/terraform fmt -check -recursive
+          terraform -chdir=infra/aws/terraform/bootstrap fmt -check -recursive
       - name: Terraform init
-        run: terraform -chdir=infra/aws/terraform init -backend=false
+        run: |
+          terraform -chdir=infra/aws/terraform init -backend=false
+          terraform -chdir=infra/aws/terraform/bootstrap init -backend=false
       - name: Terraform validate
-        run: terraform -chdir=infra/aws/terraform validate
+        run: |
+          terraform -chdir=infra/aws/terraform validate
+          terraform -chdir=infra/aws/terraform/bootstrap validate
       - name: Compose configuration
         run: docker compose --env-file .env.example config --quiet
       - name: Shell syntax

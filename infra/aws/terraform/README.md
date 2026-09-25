@@ -1,95 +1,156 @@
-# Terraform — API Gateway HTTP API
+# Terraform — infraestructura de Pedidos360
 
-Este directorio es un **esqueleto válido** para la capa de entrada de Pedidos360. Crea una AWS API Gateway HTTP API con:
+Esta configuración crea la infraestructura completa del Caso 0 en AWS:
 
-- authorizer JWT de Microsoft Entra ID para `/api/**`;
-- authorizer JWT de Amazon Cognito para `/aws/api/**`;
-- audiencia de `pedidos360-api` para Entra y App Client público `59be26pgg5ginu2sutr8eetgjg` para Cognito;
-- CORS limitado a los orígenes suministrados;
-- VPC Link con subredes y security groups existentes para una integración privada;
-- proxy de las rutas públicas `/api/orders/*`, `/api/catalog/*` y sus equivalentes `/aws/api/*` hacia el listener/Service Connect privado del BFF;
-- repositorios ECR cifrados con scan-on-push para `frontend`, `bff`, `catalog` y `orders`;
-- etapa predeterminada con auto deploy y métricas.
+| Capa | Recursos | Nota de seguridad |
+|---|---|---|
+| Entrada pública | API Gateway HTTP API | Única URL pública del backend |
+| Autorización | 2 authorizers JWT | Entra en `/api/**`, Cognito en `/aws/api/**` |
+| Red | VPC, subredes públicas/app/datos, NAT, VPC Endpoints | Sin IP pública en tareas |
+| Entrada privada | ALB interno + VPC Link | El ALB no tiene listener público |
+| Ejecución | ECS Fargate: bff, catalog, orders | `assign_public_ip = false` |
+| Descubrimiento | Cloud Map privado | catalog y orders sin nombres públicos |
+| Datos | RDS Oracle (opcional) | Contraseñas fuera de Terraform |
+| Secretos | Secrets Manager + KMS | Sin secretos en el repositorio |
+| Frontend | S3 privado + CloudFront (SPA) | Bucket no público |
+| Imágenes | ECR con scan-on-push | Se publican con OIDC |
 
-No se crea una ruta `$default`. Tampoco se publican las operaciones internas `/internal/catalog/stock/reservations` del catálogo.
+## Estructura
 
-## Límite importante: no es el despliegue backend completo
+```text
+infra/aws/terraform/
+├── bootstrap/     -> se aplica una vez, con estado local
+└── (raíz)         -> el resto, con backend S3 remoto
+```
 
-La arquitectura exige que BFF, catalog, orders y Oracle estén en una red privada. **Este esqueleto crea un VPC Link usando subredes y security groups de una VPC existente, pero no crea la VPC, sus rutas, NAT, balanceador interno, ECS/Fargate ni una base Oracle gestionada.** Antes de `terraform apply` se debe:
+El bootstrap va aparte por una razón técnica: **un backend remoto no puede
+crear su propio contenedor**. El bucket de estado, la tabla de bloqueo, el
+proveedor OIDC de GitHub y el rol de despliegue tienen que existir antes de que
+exista el estado que los usa.
 
-1. definir la red privada y el runtime de los tres servicios backend, preferiblemente ECS/Fargate o una solución equivalente;
-2. colocar Oracle en subredes privadas, con secretos gestionados, copias de seguridad y alta disponibilidad según requisitos;
-3. implementar y validar el mecanismo privado que permite a API Gateway alcanzar **solo** el BFF;
-4. resolver DNS, TLS, timeouts y reglas de security groups de esa conectividad;
-5. configurar el URI de integración para el BFF y mantener cerrados catalog y orders.
+## 1. Bootstrap
 
-La integración exige `connection_type = "VPC_LINK"` y un ARN privado de listener o Service Connect; una URL pública no es válida. API Gateway conserva la **única URL pública del backend**. El frontend se publica por separado, por ejemplo como un sitio estático; no habilita puertos backend adicionales.
+```bash
+cd infra/aws/terraform/bootstrap
+cp terraform.tfvars.example terraform.tfvars
+# completar github_org y github_repositories
+terraform init
+terraform validate
+terraform plan -out=bootstrap.tfplan
+terraform apply bootstrap.tfplan
+```
 
-## Archivos
+Guarda estos valores, son las variables que necesita GitHub:
 
-- `versions.tf`: versiones de Terraform y del provider AWS.
-- `variables.tf`: región, tenant, audiencia, orígenes CORS, VPC Link y destino privado del BFF.
-- `main.tf`: HTTP API, dos JWT authorizers, repositorios ECR, VPC Link, integración privada, rutas y stage.
-- `outputs.tf`: ID, endpoint y rutas desplegadas.
+```text
+state_bucket           -> TF_STATE_BUCKET
+state_lock_table       -> TF_LOCK_TABLE
+github_deploy_role_arn -> AWS_DEPLOY_ROLE_ARN
+```
 
-No se incluye backend de Terraform. Para producción se debe añadir un backend remoto cifrado (por ejemplo, S3 con bloqueo y DynamoDB para lock) antes del primer `apply`.
+**El estado del bootstrap contiene el ARN del rol y el nombre del bucket, no
+secretos.** Aun así, trátalo como información sensible y no lo subas.
 
-## Validación local
+## 2. Infraestructura principal
 
 ```bash
 cd infra/aws/terraform
-terraform init -backend=false
-terraform fmt -check -recursive
-terraform validate
-```
+cp terraform.tfvars.example terraform.tfvars
+# completar entra_tenant_id, entra_api_audience y oracle_host
 
-La instalación de providers requiere acceso de red. `terraform validate` no crea recursos en AWS.
+terraform init \
+  -backend-config="bucket=<state_bucket>" \
+  -backend-config="key=pedidos360/terraform.tfstate" \
+  -backend-config="region=us-east-1" \
+  -backend-config="dynamodb_table=<lock_table>" \
+  -backend-config="encrypt=true"
 
-## Ejemplo de variables
-
-No se versionan archivos `*.tfvars` porque pueden contener identificadores o parámetros del entorno. Para un plan manual se puede usar un archivo local no versionado, por ejemplo `dev.auto.tfvars`:
-
-```hcl
-aws_region         = "us-east-1"
-entra_tenant_id    = "<TENANT_ID_GUID>"
-entra_api_audience = "150f51db-4084-4979-b1a1-e6a6e7893a01"
-cognito_user_pool_id = "us-east-1_UmEhPRYdI"
-cognito_region = "us-east-1"
-cognito_issuer = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI"
-cognito_api_audience = "59be26pgg5ginu2sutr8eetgjg"
-cognito_authorization_scopes = ["openid"]
-allowed_origins       = ["https://pedidos360.example.com"]
-bff_integration_uri   = "arn:aws:elasticloadbalancing:<region>:<account>:listener/app/private-bff/<id>/<id>"
-bff_tls_server_name   = "bff.private.example.com"
-vpc_subnet_ids        = ["subnet-private-a", "subnet-private-b"]
-vpc_security_group_ids = ["sg-api-gateway-private"]
-
-tags = {
-  Project   = "Pedidos360"
-  ManagedBy = "Terraform"
-}
-```
-
-> `entra_api_audience` es el **Application (client) ID** de la API. El scope solicitado por el frontend es `api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user`; no se confunden audience y scope.
-
-## Plan y despliegue condicionado
-
-Una vez implementado el diseño de red e integración privada:
-
-```bash
-terraform init
 terraform fmt -check -recursive
 terraform validate
 terraform plan -out=tfplan
-terraform show tfplan
+terraform show tfplan        # revisar ANTES de aplicar
 terraform apply tfplan
 ```
 
-No se debe aplicar este esqueleto apuntando a un BFF público. Durante la implementación completa, se deben añadir los recursos de red, IAM, secretos, observabilidad y ciclo de vida que falten, y revisar el plan antes de cambios productivos.
+## 3. Secretos de base de datos (obligatorio)
+
+Los Secrets se crean **vacíos a propósito**. Terraform no genera ni guarda
+contraseñas. Mientras no haya versión del secreto, ECS no inicia la tarea y lo
+indica explícitamente: fallar de forma visible es preferible a arrancar con
+credenciales vacías.
+
+Crea los usuarios de aplicación en Oracle (no uses el usuario maestro para los
+microservicios) y luego carga cada secreto desde un archivo temporal:
+
+```bash
+# catalog
+umask 077
+printf '{"username":"<CATALOG_DB_USER>","password":"<PASSWORD>"}' > /tmp/secret.json
+aws secretsmanager put-secret-value \
+  --secret-id pedidos360/catalog/db \
+  --secret-string file:///tmp/secret.json
+shred -u /tmp/secret.json
+
+# orders, mismo procedimiento con pedidos360/orders/db
+```
+
+No escribas la contraseña en el comando: queda en el historial del shell y en la
+lista de procesos. No la pegues en este repositorio, en un `.tfvars` ni en un
+chat.
+
+## 4. Imagen y despliegue
+
+```bash
+# publicar imágenes (desde cada repo, con el workflow publish-ecr.yml)
+# luego fijar el tag en la infraestructura
+terraform apply -var container_image_tag=<sha-del-commit>
+```
+
+El frontend no necesita imagen: se publica como estático con
+`deploy-frontend.yml`, que compila con Vite y sincroniza a S3.
+
+## Orden de despliegue en GitHub
+
+1. Crear el environment `aws-production` con **required reviewers**.
+2. Crear los secrets/environments con las variables que usan los workflows
+   (ver `docs/DESPLIEGUE_AWS.md`).
+3. Abrir el PR de `feature/cognito-aws` para que corra el CI.
+4. `AWS Terraform` → input `apply: true` después de aprobar el environment.
+5. `Publish ... to ECR` para bff, catalog y orders.
+6. `Deploy frontend to S3 and CloudFront`.
+
+## Lo que este Terraform NO hace
+
+- **No crea el User Pool de Cognito.** Ya existe (`us-east-1_UmEhPRYdI`) y solo
+  se consume su issuer y su App Client público.
+- **No crea la app de Entra ID.** Se referencia por tenant y audience.
+- **No crea usuarios, ni producto, ni pedidos.** Los datos de negocio se crean
+  con Flyway al arrancar catalog y orders.
+- **No genera ni almacena contraseñas.** Ver la sección 3.
+- **No expone el backend por otra vía que API Gateway.** BFF, catalog, orders y
+  Oracle no tienen IP pública, listener público ni IP flotante.
+
+## Costo mensual aproximado (us-east-1, 2 AZ)
+
+| Recurso | Costo aproximado |
+|---|---|
+| NAT Gateway (1) | ~32 USD + tráfico |
+| ECS Fargate (6 tareas) | ~90 USD |
+| ALB | ~18 USD + LCU |
+| VPC Endpoints de interfaz (4) | ~29 USD |
+| API Gateway | ~1 USD |
+| S3 + CloudFront | ~2 USD |
+| Oracle | según clase y licencia |
+
+Sin incluir Oracle. Antes de aplicar, revisa el costo total: los VPC Endpoints y
+el NAT Gateway se pueden facturar aunque la aplicación no se use. Para una
+entrega académica se puede desactivar `enable_vpc_endpoints` y aceptar que las
+tareas salgan por el NAT.
 
 ## Rutas
 
-Las rutas de Terraform se definen por método para no reenviar métodos distintos del contrato:
+Las rutas de Terraform se definen por método para no reenviar métodos distintos
+del contrato:
 
 | Ruta | Métodos públicos del contrato |
 |---|---|
@@ -100,6 +161,42 @@ Las rutas de Terraform se definen por método para no reenviar métodos distinto
 | `/api/catalog/products/{id}` | `GET`, `PUT`, `DELETE` |
 | `/api/catalog/products/{id}/stock` | `PATCH` |
 
-Las mismas 12 rutas por método se duplican bajo `/aws/api/**` y usan exclusivamente el authorizer Cognito. No existe catch-all `$default`; las reservas internas nunca se publican.
+Las mismas 12 rutas por método se duplican bajo `/aws/api/**` y usan
+exclusivamente el authorizer Cognito. No existe catch-all `$default`: las rutas
+no documentadas devuelven `404` y las reservas internas nunca se publican.
 
-La autorización por rol sigue en BFF y microservicios. API Gateway valida el JWT, pero no reemplaza la segunda validación ni las reglas de `Admin`, `Operador` y `Cliente`.
+## Detalles que conviene conocer
+
+- **`integration_uri` es el ARN del listener**, no una URL. API Gateway exige
+  `arn:...:listener/...` o el ARN de un servicio de Cloud Map. Una URL pública
+  se rechaza con `BadRequestException`.
+- **Los VPC Links son inmutables.** Cambiar subredes o security groups obliga a
+  recrear el link: elimínalo y vuelve a aplicar.
+- **CORS depende de CloudFront.** El dominio del frontend se agrega siempre a
+  los orígenes permitidos; `allowed_origins` es solo para casos adicionales.
+- **El ALB es interno.** `internal = true` y su DNS no resuelve desde Internet.
+- **El prefijo `/health` no existe en la API.** Los health checks del ALB van
+  directo al BFF por la red privada, no por API Gateway.
+- **`readonlyRootFilesystem` con tmpfs en `/tmp`**: la imagen es inmutable y la
+  JVM sigue teniendo un directorio temporal escribible.
+
+## Validación local
+
+```bash
+cd infra/aws/terraform
+terraform init -backend=false
+terraform fmt -check -recursive
+terraform validate
+
+cd bootstrap
+terraform init -backend=false
+terraform fmt -check -recursive
+terraform validate
+```
+
+`terraform validate` no crea recursos en AWS, pero sí necesita descargar el
+provider. No sustituye al `plan` revisado contra la cuenta real.
+
+> `entra_api_audience` es el **Application (client) ID** de la API. El scope que
+> pide el frontend es `api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user`;
+> no se confunden audience y scope.
