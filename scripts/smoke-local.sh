@@ -6,10 +6,10 @@ LOG_ROOT="${PEDIDOS360_LOG_DIR:-/tmp/opencode/pedidos360-smoke}"
 mkdir -p "$LOG_ROOT"
 RUN_DIR="$(mktemp -d "$LOG_ROOT/run.XXXXXX")"
 
-CATALOG_JAR="$ROOT_DIR/ms-pedidos360-catalog/target/ms-pedidos360-catalog-1.0.0.jar"
-ORDERS_JAR="$ROOT_DIR/ms-pedidos360-orders/target/ms-pedidos360-orders-1.0.0.jar"
-BFF_JAR="$ROOT_DIR/ms-pedidos360-bff/target/ms-pedidos360-bff-1.0.0.jar"
-TOKEN_SCRIPT="$ROOT_DIR/ms-pedidos360-bff/scripts/generate-local-token.py"
+CATALOG_JAR="$ROOT_DIR/../pedidos360-catalog/target/ms-pedidos360-catalog-1.0.0.jar"
+ORDERS_JAR="$ROOT_DIR/../pedidos360-orders/target/ms-pedidos360-orders-1.0.0.jar"
+BFF_JAR="$ROOT_DIR/../pedidos360-bff/target/ms-pedidos360-bff-1.0.0.jar"
+TOKEN_SCRIPT="$ROOT_DIR/../pedidos360-bff/scripts/generate-local-token.py"
 
 fail() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -79,6 +79,9 @@ PY
 
 status=$(curl -sS -o "$RUN_DIR/no-token.json" -w '%{http_code}' 'http://127.0.0.1:8080/api/orders')
 expect_status 401 "$status" 'Petición sin token'
+
+status=$(curl -sS -o "$RUN_DIR/no-token-aws.json" -w '%{http_code}' 'http://127.0.0.1:8080/aws/api/orders')
+expect_status 401 "$status" 'Petición AWS sin token'
 
 status=$(curl -sS -o "$RUN_DIR/client-products.json" -w '%{http_code}' \
   -H "Authorization: Bearer $CLIENT_TOKEN" 'http://127.0.0.1:8080/api/catalog/products')
@@ -177,5 +180,5 @@ status=$(curl -sS -o "$RUN_DIR/third-order.json" -w '%{http_code}' \
   'http://127.0.0.1:8080/api/orders')
 expect_status 400 "$status" 'Cantidad de pedido inválida'
 
-printf 'Smoke E2E aprobado: auth=401/403/200, ownership=403, skip=409, stock=3->2->2, ciclo completo=OK\n'
+printf 'Smoke E2E aprobado: auth=401/403/200, namespaces AWS/Entra aislados, ownership=403, skip=409, stock=3->2->2, ciclo completo=OK\n'
 printf 'Logs conservados en %s\n' "$RUN_DIR"

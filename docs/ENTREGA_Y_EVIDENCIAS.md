@@ -12,21 +12,22 @@ Este documento define el inventario, las verificaciones y el paquete de evidenci
 - `scripts/run-local.sh`: prevalidación y arranque del stack Oracle.
 - `scripts/smoke-local.sh`: prueba E2E con H2 para autenticación, ownership, transiciones y stock.
 - `scripts/stop-local.sh`: parada sin borrar el volumen Oracle.
-- `infra/frontend.Dockerfile`: imagen SPA parametrizable sin modificar el proyecto frontend.
-- `infra/aws/openapi.yaml`: contrato público de API.
+- `../pedidos360-frontend/`, `../pedidos360-bff/`, `../pedidos360-catalog/` y `../pedidos360-orders/`: proyectos hermanos.
+- `infra/aws/openapi.yaml`: contrato público de API con namespaces Entra y Cognito.
 - `infra/aws/terraform/README.md`: alcance y límites del Terraform.
-- `infra/aws/terraform/*.tf`: esqueleto API Gateway HTTP API.
+- `infra/aws/terraform/*.tf`: API Gateway HTTP API, dos authorizers, ECR y esqueleto de integración privada.
 
 ### Proyectos
 
-- `ms-pedidos360-catalog/`
-- `ms-pedidos360-orders/`
-- `ms-pedidos360-bff/`
-- `frontend-pedidos360/`
+- `../pedidos360-catalog/`
+- `../pedidos360-orders/`
+- `../pedidos360-bff/`
+- `../pedidos360-frontend/`
 
 ### Documentación
 
 - `docs/ESPECIFICACION_TECNICA.md`
+- `docs/CONFIGURACION_COGNITO.md`
 - `docs/CONFIGURACION_ENTRA_ID.md`
 - `docs/DESPLIEGUE_AWS.md`
 - `docs/ENTREGA_Y_EVIDENCIAS.md`
@@ -40,9 +41,9 @@ Ejecutar desde la raíz salvo indicación contraria. Registrar versión de Java,
 ### Backend Spring Boot
 
 ```bash
-mvn -f ms-pedidos360-catalog/pom.xml clean verify
-mvn -f ms-pedidos360-orders/pom.xml clean verify
-mvn -f ms-pedidos360-bff/pom.xml clean verify
+mvn -f ../pedidos360-catalog/pom.xml clean verify
+mvn -f ../pedidos360-orders/pom.xml clean verify
+mvn -f ../pedidos360-bff/pom.xml clean verify
 ```
 
 Si los proyectos incluyen wrappers, se puede preferir el wrapper versionado. No mezclar el resultado de una base H2 local con evidencia de Oracle o AWS.
@@ -50,9 +51,9 @@ Si los proyectos incluyen wrappers, se puede preferir el wrapper versionado. No 
 ### Frontend React + Vite
 
 ```bash
-npm --prefix frontend-pedidos360 ci
-npm --prefix frontend-pedidos360 test
-npm --prefix frontend-pedidos360 run build
+npm --prefix ../pedidos360-frontend ci
+npm --prefix ../pedidos360-frontend test
+npm --prefix ../pedidos360-frontend run build
 ./scripts/smoke-local.sh
 ```
 
@@ -111,14 +112,19 @@ No se considera evidencia de una prueba una imagen de pantalla obtenida mientras
 | ID-09 | `Cliente` intenta administrar catálogo | `403` |
 | ID-10 | `Cliente` intenta transición operacional | `403` |
 | ID-11 | Usuario consulta/cancela pedido ajeno | `403` o recurso no visible, sin datos filtrados |
-| ID-12 | Cambio de rol | nuevo token refleja `roles`; un token viejo no gana permisos nuevos |
+| ID-12 | Cambio de rol | nuevo token refleja `roles` o `cognito:groups`; un token viejo no gana permisos nuevos |
+| ID-13 | Token Cognito en `/api/**` | `401` en API Gateway y BFF |
+| ID-14 | Token Entra en `/aws/api/**` | `401` en API Gateway y BFF |
+| ID-15 | Cognito ID token en `/aws/api/**` | `401`; solo access token |
+| ID-16 | Usuario Cognito sin grupo reconocido | `403`, nunca se trata como Cliente implícito |
 
 ### Contrato HTTP
 
 Probar solo las rutas definidas en `docs/ESPECIFICACION_TECNICA.md`:
 
-- Catálogo: `GET/POST /api/catalog/products`, `GET/PUT/DELETE /api/catalog/products/{id}` y `PATCH /api/catalog/products/{id}/stock`.
-- Pedidos: `GET/POST /api/orders`, `GET/PUT/DELETE /api/orders/{id}` y `PATCH /api/orders/{id}/status`.
+- Catálogo Entra: `GET/POST /api/catalog/products`, `GET/PUT/DELETE /api/catalog/products/{id}` y `PATCH /api/catalog/products/{id}/stock`.
+- Pedidos Entra: `GET/POST /api/orders`, `GET/PUT/DELETE /api/orders/{id}` y `PATCH /api/orders/{id}/status`.
+- Las mismas operaciones existen bajo `/aws/api/**` y solo aceptan Cognito.
 - El cliente nunca consume `/internal/catalog/stock/reservations` ni las URL privadas de microservicios.
 
 Para cada método conservar request, response, status, ID de correlación (request ID) y timestamp, ocultando Bearer y datos personales innecesarios.
@@ -167,6 +173,9 @@ Las consultas SQL de Oracle deben mostrar valores antes/después usando el mismo
 | GW-06 | `/internal/...` desde Internet | no existe en API Gateway |
 | GW-07 | Seguridad de red | BFF, catalog, orders y Oracle sin ingress público; API Gateway es la única URL pública del backend |
 | GW-08 | Token validado dos veces | API Gateway valida JWT y BFF/microservicios vuelven a validarlo |
+| GW-09 | Authorizers separados | Entra solo en `/api/**`; Cognito solo en `/aws/api/**` |
+| GW-10 | Cognito ID token | rechazado por `token_use=access` |
+| GW-11 | ECR/OIDC | imágenes publicadas por tag/digest sin access keys en GitHub |
 
 ## 4. Evidencia de local, Oracle y AWS
 
@@ -187,11 +196,13 @@ Las consultas SQL de Oracle deben mostrar valores antes/después usando el mismo
 
 ### AWS
 
-1. Exportar el plan de Terraform aprobado.
-2. Guardar identificadores no sensibles, definiciones de tareas versionadas y digest de imágenes.
-3. Ejecutar smoke tests desde fuera **solo contra API Gateway**.
-4. Adjuntar hallazgos de Security Groups, VPC Flow Logs, WAF si se adoptó, alarmas y configuración de CORS.
-5. Verificar que la revisión de red demuestra que no hay URL pública del backend distinta de API Gateway.
+1. Configurar el App Client de Cognito con PKCE S256, sin client secret, callbacks exactos y grupos.
+2. Exportar el plan de Terraform aprobado.
+3. Publicar las cuatro imágenes con los workflows `publish-ecr.yml` y GitHub OIDC; registrar tags/digests, no credenciales.
+4. Guardar identificadores no sensibles, definiciones de tareas versionadas y digest de imágenes.
+5. Ejecutar smoke tests desde fuera **solo contra API Gateway**.
+6. Adjuntar hallazgos de Security Groups, VPC Flow Logs, WAF si se adoptó, alarmas y configuración de CORS.
+7. Verificar que la revisión de red demuestra que no hay URL pública del backend distinta de API Gateway.
 
 La URL de frontend es pública por necesidad, pero no es una entrada al backend. CloudWatch/S3 del frontend no debe convertirse en una ruta alternativa a BFF, catalog, orders u Oracle.
 
@@ -235,7 +246,9 @@ La entrega está lista para aceptación cuando:
 
 - [ ] los cuatro proyectos construyen y sus pruebas automáticas pasan;
 - [ ] el contrato OpenAPI contiene exclusivamente las rutas públicas documentadas;
-- [ ] JWT y roles se validan en API Gateway y en cada frontera backend aplicable;
+- [ ] JWT, audiences, `token_use=access` y roles se validan en API Gateway y en cada frontera backend aplicable;
+- [ ] el App Client Cognito usa Authorization Code + PKCE S256, no tiene client secret y sus callbacks están registrados;
+- [ ] las cuatro imágenes se construyen/publican en ECR mediante GitHub OIDC;
 - [ ] las capacidades por `Admin`, `Operador` y `Cliente` están probadas;
 - [ ] todas las transiciones legales e ilegales se comportan según la especificación;
 - [ ] descuento, idempotencia y restitución de stock están probados en Oracle;

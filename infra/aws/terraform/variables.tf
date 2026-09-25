@@ -4,6 +4,51 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "cognito_user_pool_id" {
+  description = "User Pool de Amazon Cognito para las rutas /aws/api."
+  type        = string
+  default     = "us-east-1_UmEhPRYdI"
+
+  validation {
+    condition     = can(regex("^[a-z0-9-]+_[A-Za-z0-9]+$", var.cognito_user_pool_id))
+    error_message = "cognito_user_pool_id debe tener el formato region_ID."
+  }
+}
+
+variable "cognito_region" {
+  description = "Región del User Pool de Cognito."
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "cognito_issuer" {
+  description = "Issuer exacto de Cognito para el authorizer JWT."
+  type        = string
+  default     = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI"
+
+  validation {
+    condition     = can(regex("^https://cognito-idp\\.[a-z0-9-]+\\.amazonaws\\.com/[A-Za-z0-9_-]+$", var.cognito_issuer))
+    error_message = "cognito_issuer debe ser un issuer HTTPS exacto de Cognito."
+  }
+}
+
+variable "cognito_api_audience" {
+  description = "App Client ID de Cognito usado como audience del authorizer."
+  type        = string
+  default     = "59be26pgg5ginu2sutr8eetgjg"
+}
+
+variable "cognito_authorization_scopes" {
+  description = "Scopes OAuth que API Gateway exige en las rutas Cognito."
+  type        = set(string)
+  default     = ["openid"]
+
+  validation {
+    condition     = length(var.cognito_authorization_scopes) > 0 && alltrue([for scope in var.cognito_authorization_scopes : trimspace(scope) != ""])
+    error_message = "Debe configurarse al menos un scope Cognito no vacío."
+  }
+}
+
 variable "api_name" {
   description = "Nombre de la HTTP API pública de Pedidos360."
   type        = string

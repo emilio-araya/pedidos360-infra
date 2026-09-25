@@ -39,6 +39,9 @@ services:
       PORT: "8082"
       ENTRA_ISSUER: ${ENTRA_ISSUER:?Define ENTRA_ISSUER en .env}
       ENTRA_API_AUDIENCE: ${ENTRA_API_AUDIENCE:?Define ENTRA_API_AUDIENCE en .env}
+      COGNITO_ISSUER: ${COGNITO_ISSUER:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI}
+      COGNITO_API_AUDIENCE: ${COGNITO_API_AUDIENCE:-59be26pgg5ginu2sutr8eetgjg}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI/.well-known/jwks.json}
       ORACLE_URL: jdbc:oracle:thin:@//oracle:1521/${ORACLE_DATABASE:-FREEPDB1}
       ORACLE_USERNAME: ${CATALOG_DB_USERNAME:?Define CATALOG_DB_USERNAME en .env}
       ORACLE_PASSWORD: ${CATALOG_DB_PASSWORD:?Define CATALOG_DB_PASSWORD en .env}
@@ -68,6 +71,9 @@ services:
       SERVER_PORT: "8081"
       ENTRA_ISSUER: ${ENTRA_ISSUER:?Define ENTRA_ISSUER en .env}
       ENTRA_API_AUDIENCE: ${ENTRA_API_AUDIENCE:?Define ENTRA_API_AUDIENCE en .env}
+      COGNITO_ISSUER: ${COGNITO_ISSUER:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI}
+      COGNITO_API_AUDIENCE: ${COGNITO_API_AUDIENCE:-59be26pgg5ginu2sutr8eetgjg}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI/.well-known/jwks.json}
       ORDERS_DB_URL: jdbc:oracle:thin:@//oracle:1521/${ORACLE_DATABASE:-FREEPDB1}
       ORDERS_DB_USERNAME: ${ORDERS_DB_USERNAME:?Define ORDERS_DB_USERNAME en .env}
       ORDERS_DB_PASSWORD: ${ORDERS_DB_PASSWORD:?Define ORDERS_DB_PASSWORD en .env}
@@ -102,6 +108,9 @@ services:
       SERVER_PORT: "8080"
       ENTRA_ISSUER: ${ENTRA_ISSUER:?Define ENTRA_ISSUER en .env}
       ENTRA_API_AUDIENCE: ${ENTRA_API_AUDIENCE:?Define ENTRA_API_AUDIENCE en .env}
+      COGNITO_ISSUER: ${COGNITO_ISSUER:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI}
+      COGNITO_API_AUDIENCE: ${COGNITO_API_AUDIENCE:-59be26pgg5ginu2sutr8eetgjg}
+      COGNITO_JWK_SET_URI: ${COGNITO_JWK_SET_URI:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI/.well-known/jwks.json}
       ORDERS_SERVICE_URL: http://orders:8081
       CATALOG_SERVICE_URL: http://catalog:8082
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:4200}
@@ -134,6 +143,13 @@ services:
         API_BASE_URL: ${API_BASE_URL:?Define API_BASE_URL en .env}
         REDIRECT_URI: ${REDIRECT_URI:-http://localhost:4200/login}
         POST_LOGOUT_REDIRECT_URI: ${POST_LOGOUT_REDIRECT_URI:-http://localhost:4200/login}
+        COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-us-east-1_UmEhPRYdI}
+        COGNITO_USER_POOL_CLIENT_ID: ${COGNITO_USER_POOL_CLIENT_ID:-59be26pgg5ginu2sutr8eetgjg}
+        COGNITO_DOMAIN: ${COGNITO_DOMAIN:-us-east-1umehprydi.auth.us-east-1.amazoncognito.com}
+        COGNITO_ISSUER: ${COGNITO_ISSUER:-https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI}
+        COGNITO_REDIRECT_URI: ${COGNITO_REDIRECT_URI:-http://localhost:4200/auth/cognito/callback}
+        COGNITO_LOGOUT_URI: ${COGNITO_LOGOUT_URI:-http://localhost:4200/login}
+        COGNITO_API_SCOPE: ${COGNITO_API_SCOPE:-openid email profile}
     image: pedidos360/frontend:local
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-4200}:80"

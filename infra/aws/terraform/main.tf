@@ -35,6 +35,37 @@ resource "aws_apigatewayv2_authorizer" "entra_jwt" {
   }
 }
 
+resource "aws_ecr_repository" "services" {
+  for_each = toset(["frontend", "bff", "catalog", "orders"])
+
+  name                 = "${var.api_name}-${each.value}"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = {
+    Name = "${var.api_name}-${each.value}"
+  }
+}
+
+resource "aws_apigatewayv2_authorizer" "cognito_jwt" {
+  api_id           = aws_apigatewayv2_api.pedidos360.id
+  name             = "cognito-jwt"
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+
+  jwt_configuration {
+    issuer   = var.cognito_issuer
+    audience = [var.cognito_api_audience]
+  }
+}
+
 # El VPC Link se crea en una VPC ya existente. Las subredes y el security group
 # deben permitir tráfico únicamente desde/hacia la infraestructura privada.
 resource "aws_apigatewayv2_vpc_link" "bff" {
@@ -59,8 +90,15 @@ resource "aws_apigatewayv2_integration" "bff" {
   }
 }
 
+check "cognito_issuer_consistency" {
+  assert {
+    condition     = var.cognito_issuer == "https://cognito-idp.${var.cognito_region}.amazonaws.com/${var.cognito_user_pool_id}"
+    error_message = "cognito_issuer debe coincidir con cognito_region y cognito_user_pool_id."
+  }
+}
+
 locals {
-  route_keys = toset([
+  route_keys = [
     "GET /api/orders",
     "POST /api/orders",
     "GET /api/orders/{id}",
@@ -73,11 +111,13 @@ locals {
     "PUT /api/catalog/products/{id}",
     "DELETE /api/catalog/products/{id}",
     "PATCH /api/catalog/products/{id}/stock",
-  ])
+  ]
+  entra_route_keys   = toset(local.route_keys)
+  cognito_route_keys = toset([for route in local.route_keys : replace(route, "/api/", "/aws/api/")])
 }
 
-resource "aws_apigatewayv2_route" "bff" {
-  for_each = local.route_keys
+resource "aws_apigatewayv2_route" "entra" {
+  for_each = local.entra_route_keys
 
   api_id             = aws_apigatewayv2_api.pedidos360.id
   route_key          = each.value
@@ -86,12 +126,26 @@ resource "aws_apigatewayv2_route" "bff" {
   authorizer_id      = aws_apigatewayv2_authorizer.entra_jwt.id
 }
 
+resource "aws_apigatewayv2_route" "cognito" {
+  for_each = local.cognito_route_keys
+
+  api_id               = aws_apigatewayv2_api.pedidos360.id
+  route_key            = each.value
+  target               = "integrations/${aws_apigatewayv2_integration.bff.id}"
+  authorization_type   = "JWT"
+  authorizer_id        = aws_apigatewayv2_authorizer.cognito_jwt.id
+  authorization_scopes = var.cognito_authorization_scopes
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.pedidos360.id
   name        = "$default"
   auto_deploy = true
 
-  depends_on = [aws_apigatewayv2_route.bff]
+  depends_on = [
+    aws_apigatewayv2_route.entra,
+    aws_apigatewayv2_route.cognito,
+  ]
 
   default_route_settings {
     detailed_metrics_enabled = true

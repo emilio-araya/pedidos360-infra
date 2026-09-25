@@ -58,6 +58,23 @@ ENTRA_API_AUDIENCE=150f51db-4084-4979-b1a1-e6a6e7893a01
 
 No usar el secreto HMAC del perfil `local` en AWS. Antes de aplicar Terraform, confirmar que `pedidos360-api` emite access tokens v2 con el issuer y audience de las líneas anteriores. Si el registro emite v1 (`sts.windows.net` y `api://{client-id}`), ajustar el authorizer y los servicios de forma coordinada; no desactivar la validación JWT.
 
+## 1.1 Configurar Cognito para `/aws/api`
+
+Seguir `docs/CONFIGURACION_COGNITO.md`. El App Client `59be26pgg5ginu2sutr8eetgjg` debe tener solo Authorization Code, PKCE S256, sin client secret, y callbacks exactos para `/auth/cognito/callback`. Los grupos `Admin`, `Operador` y `Cliente` se asignan a usuarios del User Pool `us-east-1_UmEhPRYdI`.
+
+Las variables públicas para BFF, Catalog, Orders y frontend son:
+
+```dotenv
+COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI
+COGNITO_API_AUDIENCE=59be26pgg5ginu2sutr8eetgjg
+COGNITO_JWK_SET_URI=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI/.well-known/jwks.json
+COGNITO_USER_POOL_ID=us-east-1_UmEhPRYdI
+COGNITO_USER_POOL_CLIENT_ID=59be26pgg5ginu2sutr8eetgjg
+COGNITO_DOMAIN=us-east-1umehprydi.auth.us-east-1.amazoncognito.com
+```
+
+Los servicios rechazan un token de Cognito en `/api/**` y un token de Entra en `/aws/api/**`. El frontend solo manda el access token, nunca el ID token.
+
 ## 2. Diseñar la red privada
 
 Antes de aplicar cualquier Terraform se debe decidir y documentar:
@@ -105,10 +122,12 @@ El compose local usa una instancia Oracle Free de desarrollo y un volumen local;
 El esqueleto crea:
 
 - HTTP API en HTTPS;
-- authorizer JWT contra el issuer del tenant y la audiencia de la API;
+- authorizer JWT de Entra para `/api/**`;
+- authorizer JWT de Cognito para `/aws/api/**`;
 - CORS para orígenes exactos;
 - integración proxy al BFF;
-- rutas explícitas `/api/orders/*` y `/api/catalog/*`;
+- rutas explícitas `/api/orders/*`, `/api/catalog/*` y sus equivalentes `/aws/api/*`;
+- repositorios ECR para `frontend`, `bff`, `catalog` y `orders`;
 - stage `$default` con auto deploy.
 
 No crea ruta `$default`, no expone rutas internas y delega en BFF/microservicios la autorización por rol y por pertenencia.
@@ -141,6 +160,7 @@ Configurar de forma local y no versionada:
 - `aws_region`;
 - `entra_tenant_id`;
 - `entra_api_audience`;
+- `cognito_user_pool_id`, `cognito_region`, `cognito_issuer`, `cognito_api_audience` y `cognito_authorization_scopes` (JSON, por ejemplo `["openid"]`);
 - `allowed_origins`;
 - `bff_integration_uri` con el ARN privado del listener/Service Connect;
 - `bff_tls_server_name`;
@@ -168,24 +188,44 @@ El frontend se puede publicar en S3/CloudFront o hosting estático equivalente:
 - `API_BASE_URL=https://<API_GATEWAY_ENDPOINT>`.
 - `REDIRECT_URI=https://<FRONTEND_ORIGIN>/login`.
 - `POST_LOGOUT_REDIRECT_URI=https://<FRONTEND_ORIGIN>/login`.
+- `COGNITO_REDIRECT_URI=https://<FRONTEND_ORIGIN>/auth/cognito/callback`.
+- `COGNITO_LOGOUT_URI=https://<FRONTEND_ORIGIN>/login`.
+- `COGNITO_USER_POOL_ID`, `COGNITO_USER_POOL_CLIENT_ID`, `COGNITO_DOMAIN` e `COGNITO_ISSUER` con los valores públicos del App Client.
 
 No incluir secretos, connection strings ni client secrets en el bundle. Si la aplicación React usa configuración compilada, los valores deben estar presentes durante el build; una variable de runtime no reescribe por sí sola un bundle estático.
 
 Configurar CORS en API Gateway y BFF con la misma allowlist exacta, por ejemplo `https://pedidos360.example.com`. Evitar comodines, cookies de sesión y credenciales CORS; la autenticación viaja en Bearer.
 
-## 7. Secuencia de despliegue
+## 7. Publicación de imágenes y GitHub OIDC
+
+Antes de ejecutar `publish-ecr.yml`, configurar en el environment de GitHub `aws-production` únicamente variables públicas y el ARN del rol:
+
+```text
+AWS_REGION=us-east-1
+AWS_ACCOUNT_ID=<account-id>
+AWS_DEPLOY_ROLE_ARN=arn:aws:iam::<account-id>:role/<github-oidc-role>
+FRONTEND_ECR_REPOSITORY=pedidos360-api-frontend
+BFF_ECR_REPOSITORY=pedidos360-api-bff
+CATALOG_ECR_REPOSITORY=pedidos360-api-catalog
+ORDERS_ECR_REPOSITORY=pedidos360-api-orders
+```
+
+El rol IAM debe trusting `repo:emilio-araya/pedidos360-*:*` mediante OIDC y permitir solo login/artifact push en esos repositorios. No guardar AWS access keys, client secrets ni tokens en GitHub Secrets. El frontend requiere además sus variables públicas de build (`API_BASE_URL`, callbacks, App Client y dominio Cognito).
+
+## 8. Secuencia de despliegue
 
 1. Desplegar migraciones Oracle de forma compatible y verificadas.
 2. Desplegar catalog y orders sin ingress público.
 3. Verificar conectividad privada, salud, JWT y llamadas internas de stock.
 4. Desplegar BFF sin ingress público.
-5. Completar la integración privada API Gateway–BFF y aplicar/verificar rutas JWT/CORS.
-6. Desplegar el frontend con `API_BASE_URL` igual al endpoint de API Gateway y `REDIRECT_URI`/`POST_LOGOUT_REDIRECT_URI` iguales a `https://<FRONTEND_ORIGIN>/login`.
-7. Ejecutar smoke tests y pruebas de seguridad de `docs/ENTREGA_Y_EVIDENCIAS.md`.
+5. Completar la integración privada API Gateway–BFF y aplicar/verificar las rutas Entra y Cognito.
+6. Construir/publicar las cuatro imágenes en ECR mediante los workflows `publish-ecr.yml` usando GitHub OIDC.
+7. Desplegar el frontend con `API_BASE_URL` igual al endpoint de API Gateway, `REDIRECT_URI`/`POST_LOGOUT_REDIRECT_URI` de Entra y `COGNITO_REDIRECT_URI`/`COGNITO_LOGOUT_URI` de Cognito.
+8. Ejecutar smoke tests y pruebas de seguridad de `docs/ENTREGA_Y_EVIDENCIAS.md`.
 
 No desplegar una versión que requiera el nuevo contrato antes de que estén disponibles sus dependencias.
 
-## 8. Verificación desde fuera
+## 9. Verificación desde fuera
 
 Obtener un token real del tenant y usar solo la URL de API Gateway:
 
@@ -208,12 +248,16 @@ Verificar además:
 
 - sin token: `401`;
 - token de otra audiencia: `401`;
+- token de Entra en `/aws/api/**`: `401`;
+- token de Cognito en `/api/**`: `401`;
+- ID token de Cognito en cualquiera de los dos namespaces: `401`;
 - `Cliente` en escritura de catálogo/transición: `403`;
+- token Cognito válido con grupo `Admin`, `Operador` o `Cliente` en `/aws/api/**`: `200/403` según operación;
 - rutas no documentadas: `404`, no exposición de microservicios;
 - CORS preflight desde el origen permitido y rechazo desde otro origen;
 - ninguna URL de orders, catalog u Oracle en la configuración del frontend.
 
-## 9. Observabilidad y rollback
+## 10. Observabilidad y rollback
 
 Como mínimo, registrar:
 

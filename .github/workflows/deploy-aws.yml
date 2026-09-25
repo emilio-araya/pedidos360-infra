@@ -31,6 +31,11 @@ jobs:
       TF_VAR_AWS_REGION: ${{ vars.AWS_REGION }}
       TF_VAR_ENTRA_TENANT_ID: ${{ vars.ENTRA_TENANT_ID }}
       TF_VAR_ENTRA_API_AUDIENCE: ${{ vars.ENTRA_API_AUDIENCE }}
+      TF_VAR_COGNITO_USER_POOL_ID: ${{ vars.COGNITO_USER_POOL_ID || 'us-east-1_UmEhPRYdI' }}
+      TF_VAR_COGNITO_REGION: ${{ vars.COGNITO_REGION || 'us-east-1' }}
+      TF_VAR_COGNITO_ISSUER: ${{ vars.COGNITO_ISSUER || 'https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI' }}
+      TF_VAR_COGNITO_API_AUDIENCE: ${{ vars.COGNITO_API_AUDIENCE || '59be26pgg5ginu2sutr8eetgjg' }}
+      TF_VAR_COGNITO_AUTHORIZATION_SCOPES: ${{ vars.COGNITO_AUTHORIZATION_SCOPES || '["openid"]' }}
       TF_VAR_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
       TF_VAR_BFF_INTEGRATION_URI: ${{ vars.BFF_INTEGRATION_URI }}
       TF_VAR_BFF_TLS_SERVER_NAME: ${{ vars.BFF_TLS_SERVER_NAME }}

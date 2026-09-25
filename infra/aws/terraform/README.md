@@ -2,11 +2,13 @@
 
 Este directorio es un **esqueleto válido** para la capa de entrada de Pedidos360. Crea una AWS API Gateway HTTP API con:
 
-- authorizer JWT de Microsoft Entra ID;
-- audiencia de `pedidos360-api` e issuer del tenant;
+- authorizer JWT de Microsoft Entra ID para `/api/**`;
+- authorizer JWT de Amazon Cognito para `/aws/api/**`;
+- audiencia de `pedidos360-api` para Entra y App Client público `59be26pgg5ginu2sutr8eetgjg` para Cognito;
 - CORS limitado a los orígenes suministrados;
 - VPC Link con subredes y security groups existentes para una integración privada;
-- proxy de las rutas públicas `/api/orders/*` y `/api/catalog/*` hacia el listener/Service Connect privado del BFF;
+- proxy de las rutas públicas `/api/orders/*`, `/api/catalog/*` y sus equivalentes `/aws/api/*` hacia el listener/Service Connect privado del BFF;
+- repositorios ECR cifrados con scan-on-push para `frontend`, `bff`, `catalog` y `orders`;
 - etapa predeterminada con auto deploy y métricas.
 
 No se crea una ruta `$default`. Tampoco se publican las operaciones internas `/internal/catalog/stock/reservations` del catálogo.
@@ -27,7 +29,7 @@ La integración exige `connection_type = "VPC_LINK"` y un ARN privado de listene
 
 - `versions.tf`: versiones de Terraform y del provider AWS.
 - `variables.tf`: región, tenant, audiencia, orígenes CORS, VPC Link y destino privado del BFF.
-- `main.tf`: HTTP API, JWT authorizer, VPC Link, integración privada, rutas y stage.
+- `main.tf`: HTTP API, dos JWT authorizers, repositorios ECR, VPC Link, integración privada, rutas y stage.
 - `outputs.tf`: ID, endpoint y rutas desplegadas.
 
 No se incluye backend de Terraform. Para producción se debe añadir un backend remoto cifrado (por ejemplo, S3 con bloqueo y DynamoDB para lock) antes del primer `apply`.
@@ -51,6 +53,11 @@ No se versionan archivos `*.tfvars` porque pueden contener identificadores o par
 aws_region         = "us-east-1"
 entra_tenant_id    = "<TENANT_ID_GUID>"
 entra_api_audience = "150f51db-4084-4979-b1a1-e6a6e7893a01"
+cognito_user_pool_id = "us-east-1_UmEhPRYdI"
+cognito_region = "us-east-1"
+cognito_issuer = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI"
+cognito_api_audience = "59be26pgg5ginu2sutr8eetgjg"
+cognito_authorization_scopes = ["openid"]
 allowed_origins       = ["https://pedidos360.example.com"]
 bff_integration_uri   = "arn:aws:elasticloadbalancing:<region>:<account>:listener/app/private-bff/<id>/<id>"
 bff_tls_server_name   = "bff.private.example.com"
@@ -92,5 +99,7 @@ Las rutas de Terraform se definen por método para no reenviar métodos distinto
 | `/api/catalog/products` | `GET`, `POST` |
 | `/api/catalog/products/{id}` | `GET`, `PUT`, `DELETE` |
 | `/api/catalog/products/{id}/stock` | `PATCH` |
+
+Las mismas 12 rutas por método se duplican bajo `/aws/api/**` y usan exclusivamente el authorizer Cognito. No existe catch-all `$default`; las reservas internas nunca se publican.
 
 La autorización por rol sigue en BFF y microservicios. API Gateway valida el JWT, pero no reemplaza la segunda validación ni las reglas de `Admin`, `Operador` y `Cliente`.

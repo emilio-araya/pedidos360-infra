@@ -18,7 +18,32 @@ output "stage_execution_arn" {
   value       = aws_apigatewayv2_stage.default.execution_arn
 }
 
+output "entra_route_keys" {
+  description = "Rutas Entra bajo /api."
+  value       = sort(tolist(local.entra_route_keys))
+}
+
+output "cognito_route_keys" {
+  description = "Rutas Cognito bajo /aws/api."
+  value       = sort(tolist(local.cognito_route_keys))
+}
+
+output "entra_authorizer_id" {
+  description = "ID del authorizer JWT de Microsoft Entra."
+  value       = aws_apigatewayv2_authorizer.entra_jwt.id
+}
+
+output "cognito_authorizer_id" {
+  description = "ID del authorizer JWT de Amazon Cognito."
+  value       = aws_apigatewayv2_authorizer.cognito_jwt.id
+}
+
+output "ecr_repository_urls" {
+  description = "URLs de los repositorios ECR para las cuatro imágenes."
+  value       = { for name, repository in aws_ecr_repository.services : name => repository.repository_url }
+}
+
 output "route_keys" {
-  description = "Rutas públicas autenticadas incluidas en el esqueleto."
-  value       = sort(tolist(local.route_keys))
+  description = "Rutas públicas de ambos proveedores."
+  value       = sort(concat(tolist(local.entra_route_keys), tolist(local.cognito_route_keys)))
 }

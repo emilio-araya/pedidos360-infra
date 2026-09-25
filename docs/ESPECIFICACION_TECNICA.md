@@ -3,13 +3,14 @@
 ## Arquitectura
 
 ```text
-React + Vite + MSAL
+React + Vite + MSAL (Entra `/api`)
+React + Vite + Amplify/OIDC (Cognito `/aws/api`)
       │ Authorization: Bearer <access_token>
       ▼
-AWS API Gateway (HTTP API, JWT authorizer y CORS)
-      │ Única entrada pública al backend
+AWS API Gateway (HTTP API, authorizers JWT separados y CORS)
+      │ Única entrada pública del backend
       ▼
-ms-pedidos360-bff (Spring Security; segunda validación JWT y roles)
+ms-pedidos360-bff (dos cadenas Spring Security)
       ├── ms-pedidos360-orders ─── Oracle
       └── ms-pedidos360-catalog ── Oracle
 
@@ -19,7 +20,7 @@ El BFF nunca se conecta a la base de datos. Los microservicios solo son accesibl
 
 ## Roles
 
-Los roles de aplicación aparecerán en el claim `roles` de Microsoft Entra ID.
+Los roles de aplicación aparecen en `roles` para Entra y en `cognito:groups` para Cognito. Los grupos de Cognito tienen exactamente los mismos nombres y mayúsculas: `Admin`, `Operador` y `Cliente`.
 
 > **Criterio ante contradicciones de la guía:** la tabla final de diferenciación atribuye algunas acciones al Cliente que contradicen la descripción de actores y el acceso de la pantalla `/catalog`. Este proyecto aplica el principio de menor privilegio y usa las responsabilidades de actores: el Cliente crea y sigue sus pedidos; Admin y Operador gestionan el dominio; únicamente Admin/Operador administran productos y stock.
 
@@ -63,7 +64,7 @@ Reglas:
 
 ## Contrato HTTP
 
-Las rutas siguientes se consumen mediante el BFF. Los microservicios las implementan internamente.
+Las rutas siguientes se consumen mediante el BFF. Cada ruta tiene una copia bajo `/aws/api/**` que solo acepta Cognito; la copia bajo `/api/**` solo acepta Entra. Los microservicios las implementan internamente.
 
 ### Catálogo
 
@@ -151,20 +152,22 @@ Respuesta de pedido:
 
 ## Identidad y JWT
 
-- Frontend SPA: `frontend-pedidos360`
-- APIscope: `api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user`
-- Audience esperado por BFF y microservicios: identificador de la API en formato v2 o `api://{client-id}` cuando el registro de Entra emita un token v1.
-- Claims utilizados: `oid` o `sub`; `roles`.
-- Validación obligatoria: firma, `iss`, `aud`, `exp` y `nbf`.
+- Frontend SPA Entra: `frontend-pedidos360`, callback `/login`.
+- Frontend Cognito: App Client `59be26pgg5ginu2sutr8eetgjg`, callback `/auth/cognito/callback`.
+- APIscope Entra: `api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user`.
+- Audience esperado de Entra: identificador de la API en formato v2 o `api://{client-id}` cuando el registro de Entra emita un token v1.
+- Cognito: issuer `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI`, audience/client ID `59be26pgg5ginu2sutr8eetgjg` y `token_use=access` obligatorio.
+- Claims utilizados: `oid`/`sub` y `roles`/`cognito:groups`.
+- Validación obligatoria por proveedor: firma, `iss`, audience/client ID, `exp`, `nbf` y `token_use` para Cognito.
 - Perfil local para desarrollo: JWT HMAC únicamente bajo el perfil Spring `local`; nunca habilitar en cloud.
 
 ## Configuración
 
 Variables principales:
 
-- Frontend: `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `API_SCOPE`, `API_BASE_URL`, `REDIRECT_URI` y `POST_LOGOUT_REDIRECT_URI`.
-- BFF: `ENTRA_ISSUER`, `ENTRA_API_AUDIENCE`, `ORDERS_SERVICE_URL`, `CATALOG_SERVICE_URL`, `CORS_ALLOWED_ORIGINS`.
-- Microservicios: `ENTRA_ISSUER`, `ENTRA_API_AUDIENCE` y su configuración Oracle.
+- Frontend: `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `API_SCOPE`, `API_BASE_URL`, `REDIRECT_URI`, `POST_LOGOUT_REDIRECT_URI`, `COGNITO_USER_POOL_ID`, `COGNITO_USER_POOL_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_ISSUER`, `COGNITO_REDIRECT_URI` y `COGNITO_LOGOUT_URI`.
+- BFF: `ENTRA_ISSUER`, `ENTRA_API_AUDIENCE`, `COGNITO_ISSUER`, `COGNITO_API_AUDIENCE`, `COGNITO_JWK_SET_URI`, `ORDERS_SERVICE_URL`, `CATALOG_SERVICE_URL` y `CORS_ALLOWED_ORIGINS`.
+- Microservicios: las variables Entra/Cognito anteriores y su configuración Oracle privada.
 
 ## Base de datos
 
