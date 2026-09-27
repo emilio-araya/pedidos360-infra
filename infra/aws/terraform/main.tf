@@ -132,22 +132,32 @@ check "private_backend_only" {
 }
 
 locals {
-  route_keys = [
-    "GET /api/orders",
-    "POST /api/orders",
-    "GET /api/orders/{id}",
-    "PUT /api/orders/{id}",
-    "DELETE /api/orders/{id}",
-    "PATCH /api/orders/{id}/status",
-    "GET /api/catalog/products",
-    "POST /api/catalog/products",
-    "GET /api/catalog/products/{id}",
-    "PUT /api/catalog/products/{id}",
-    "DELETE /api/catalog/products/{id}",
-    "PATCH /api/catalog/products/{id}/stock",
-  ]
-  entra_route_keys   = toset(local.route_keys)
-  cognito_route_keys = toset([for route in local.route_keys : replace(route, "/api/", "/aws/api/")])
+  # Rutas por metodo, tal como las define el contrato publico.
+  #
+  # Se enumeran de forma explicita en lugar de derivar el namespace de Cognito
+  # reemplazando texto. La version con replace() era fragil: una diferencia
+  # minima en las barras generaba claves como "GET //aws/api//catalog/products"
+  # y API Gateway las rechaza con "Part of the given route key path is empty".
+  route_methods = {
+    "/orders"                      = ["GET", "POST"]
+    "/orders/{id}"                 = ["GET", "PUT", "DELETE"]
+    "/orders/{id}/status"          = ["PATCH"]
+    "/catalog/products"            = ["GET", "POST"]
+    "/catalog/products/{id}"       = ["GET", "PUT", "DELETE"]
+    "/catalog/products/{id}/stock" = ["PATCH"]
+  }
+
+  entra_route_keys = toset(flatten([
+    for path, methods in local.route_methods : [
+      for method in methods : "${method} /api${path}"
+    ]
+  ]))
+
+  cognito_route_keys = toset(flatten([
+    for path, methods in local.route_methods : [
+      for method in methods : "${method} /aws/api${path}"
+    ]
+  ]))
 }
 
 resource "aws_apigatewayv2_route" "entra" {
