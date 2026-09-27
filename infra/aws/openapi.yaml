@@ -4,40 +4,39 @@ info:
   version: 1.0.0
   license:
     name: Proyecto académico Pedidos360
-  description: >-
-    Contrato público consumido por el frontend a través del BFF. Las operaciones
+  description: Contrato público consumido por el frontend a través del BFF. Las operaciones
     internas de reserva de stock no forman parte de esta API.
 servers:
-  - url: https://api.example.invalid
-    description: Sustituir por el endpoint HTTPS de API Gateway.
+- url: https://api.example.invalid
+  description: Sustituir por el endpoint HTTPS de API Gateway.
 tags:
-  - name: Catalog
-    description: Catálogo de productos.
-  - name: Orders
-    description: Gestión de pedidos.
-security:
-  - EntraJWT: []
+- name: Catalog
+  description: Catálogo de productos.
+- name: Orders
+  description: Gestión de pedidos.
 paths:
   /api/catalog/products:
     get:
-      tags: [Catalog]
+      tags:
+      - Catalog
       operationId: listarProductos
       summary: Lista productos
       responses:
-        "2XX":
+        2XX:
           description: Lista de productos.
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Product"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                  $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
     post:
-      tags: [Catalog]
+      tags:
+      - Catalog
       operationId: crearProducto
       summary: Crea un producto
       description: Requiere rol Admin u Operador.
@@ -46,44 +45,48 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProductInput"
+              $ref: '#/components/schemas/ProductInput'
       responses:
-        "2XX":
+        2XX:
           description: Producto creado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Product"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - EntraJWT: []
   /api/catalog/products/{id}:
     parameters:
-      - $ref: "#/components/parameters/ProductId"
+    - $ref: '#/components/parameters/ProductId'
     get:
-      tags: [Catalog]
+      tags:
+      - Catalog
       operationId: obtenerProducto
       summary: Obtiene un producto por ID
       responses:
-        "2XX":
+        2XX:
           description: Producto encontrado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Product"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
     put:
-      tags: [Catalog]
+      tags:
+      - Catalog
       operationId: actualizarProducto
       summary: Actualiza un producto
       description: Requiere rol Admin u Operador.
@@ -92,45 +95,49 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ProductInput"
+              $ref: '#/components/schemas/ProductInput'
       responses:
-        "2XX":
+        2XX:
           description: Producto actualizado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Product"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
     delete:
-      tags: [Catalog]
+      tags:
+      - Catalog
       operationId: eliminarProducto
       summary: Elimina un producto
       description: Requiere rol Admin u Operador.
       responses:
-        "2XX":
+        2XX:
           description: Producto eliminado.
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - EntraJWT: []
   /api/catalog/products/{id}/stock:
     parameters:
-      - $ref: "#/components/parameters/ProductId"
+    - $ref: '#/components/parameters/ProductId'
     patch:
-      tags: [Catalog]
+      tags:
+      - Catalog
       operationId: actualizarStockProducto
       summary: Actualiza el stock de un producto
       description: Requiere rol Admin u Operador.
@@ -139,44 +146,48 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/StockUpdate"
+              $ref: '#/components/schemas/StockUpdate'
       responses:
-        "2XX":
+        2XX:
           description: Stock actualizado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Product"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - EntraJWT: []
   /api/orders:
     get:
-      tags: [Orders]
+      tags:
+      - Orders
       operationId: listarPedidos
       summary: Lista pedidos visibles para el usuario autenticado
       responses:
-        "2XX":
+        2XX:
           description: Lista de pedidos.
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Order"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                  $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
     post:
-      tags: [Orders]
+      tags:
+      - Orders
       operationId: crearPedido
       summary: Crea un pedido
       requestBody:
@@ -184,95 +195,104 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/OrderCreate"
+              $ref: '#/components/schemas/OrderCreate'
       responses:
-        "2XX":
+        2XX:
           description: Pedido creado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Order"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - EntraJWT: []
   /api/orders/{id}:
     parameters:
-      - $ref: "#/components/parameters/OrderId"
+    - $ref: '#/components/parameters/OrderId'
     get:
-      tags: [Orders]
+      tags:
+      - Orders
       operationId: obtenerPedido
       summary: Obtiene un pedido visible para el usuario autenticado
       responses:
-        "2XX":
+        2XX:
           description: Pedido encontrado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Order"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
     put:
-      tags: [Orders]
+      tags:
+      - Orders
       operationId: actualizarPedido
       summary: Actualiza un pedido
-      description: Reemplaza los ítems y las notas únicamente mientras el pedido está en CREADO.
+      description: Reemplaza los ítems y las notas únicamente mientras el pedido está
+        en CREADO.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/OrderUpdate"
+              $ref: '#/components/schemas/OrderUpdate'
       responses:
-        "2XX":
+        2XX:
           description: Pedido actualizado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Order"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
     delete:
-      tags: [Orders]
+      tags:
+      - Orders
       operationId: cancelarPedidoCreado
       summary: Cancela un pedido mientras está en CREADO
       description: Un Cliente solo puede cancelar su propio pedido no aceptado.
       responses:
-        "2XX":
+        2XX:
           description: Pedido cancelado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Order"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - EntraJWT: []
   /api/orders/{id}/status:
     parameters:
-      - $ref: "#/components/parameters/OrderId"
+    - $ref: '#/components/parameters/OrderId'
     patch:
-      tags: [Orders]
+      tags:
+      - Orders
       operationId: cambiarEstadoPedido
       summary: Ejecuta una transición operacional de estado
       description: Requiere rol Admin u Operador y respeta las transiciones funcionales.
@@ -281,47 +301,378 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/OrderStatusUpdate"
+              $ref: '#/components/schemas/OrderStatusUpdate'
       responses:
-        "2XX":
+        2XX:
           description: Estado actualizado.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Order"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
-        "409":
-          $ref: "#/components/responses/Conflict"
-        "500":
-          $ref: "#/components/responses/InternalError"
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - EntraJWT: []
+  /aws/api/catalog/products:
+    get:
+      tags:
+      - Catalog
+      operationId: listarProductosAws
+      summary: Lista productos
+      responses:
+        2XX:
+          description: Lista de productos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+      - Catalog
+      operationId: crearProductoAws
+      summary: Crea un producto
+      description: Requiere rol Admin u Operador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        2XX:
+          description: Producto creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - CognitoJWT: []
+  /aws/api/catalog/products/{id}:
+    parameters:
+    - $ref: '#/components/parameters/ProductId'
+    get:
+      tags:
+      - Catalog
+      operationId: obtenerProductoAws
+      summary: Obtiene un producto por ID
+      responses:
+        2XX:
+          description: Producto encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags:
+      - Catalog
+      operationId: actualizarProductoAws
+      summary: Actualiza un producto
+      description: Requiere rol Admin u Operador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductInput'
+      responses:
+        2XX:
+          description: Producto actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags:
+      - Catalog
+      operationId: eliminarProductoAws
+      summary: Elimina un producto
+      description: Requiere rol Admin u Operador.
+      responses:
+        2XX:
+          description: Producto eliminado.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - CognitoJWT: []
+  /aws/api/catalog/products/{id}/stock:
+    parameters:
+    - $ref: '#/components/parameters/ProductId'
+    patch:
+      tags:
+      - Catalog
+      operationId: actualizarStockProductoAws
+      summary: Actualiza el stock de un producto
+      description: Requiere rol Admin u Operador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockUpdate'
+      responses:
+        2XX:
+          description: Stock actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - CognitoJWT: []
+  /aws/api/orders:
+    get:
+      tags:
+      - Orders
+      operationId: listarPedidosAws
+      summary: Lista pedidos visibles para el usuario autenticado
+      responses:
+        2XX:
+          description: Lista de pedidos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+      - Orders
+      operationId: crearPedidoAws
+      summary: Crea un pedido
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderCreate'
+      responses:
+        2XX:
+          description: Pedido creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - CognitoJWT: []
+  /aws/api/orders/{id}:
+    parameters:
+    - $ref: '#/components/parameters/OrderId'
+    get:
+      tags:
+      - Orders
+      operationId: obtenerPedidoAws
+      summary: Obtiene un pedido visible para el usuario autenticado
+      responses:
+        2XX:
+          description: Pedido encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags:
+      - Orders
+      operationId: actualizarPedidoAws
+      summary: Actualiza un pedido
+      description: Reemplaza los ítems y las notas únicamente mientras el pedido está
+        en CREADO.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderUpdate'
+      responses:
+        2XX:
+          description: Pedido actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags:
+      - Orders
+      operationId: cancelarPedidoCreadoAws
+      summary: Cancela un pedido mientras está en CREADO
+      description: Un Cliente solo puede cancelar su propio pedido no aceptado.
+      responses:
+        2XX:
+          description: Pedido cancelado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - CognitoJWT: []
+  /aws/api/orders/{id}/status:
+    parameters:
+    - $ref: '#/components/parameters/OrderId'
+    patch:
+      tags:
+      - Orders
+      operationId: cambiarEstadoPedidoAws
+      summary: Ejecuta una transición operacional de estado
+      description: Requiere rol Admin u Operador y respeta las transiciones funcionales.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderStatusUpdate'
+      responses:
+        2XX:
+          description: Estado actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    security:
+    - CognitoJWT: []
 components:
   securitySchemes:
     EntraJWT:
       type: oauth2
-      description: >-
-        Access token delegado de Microsoft Entra ID. La audiencia esperada es el
-        Application (client) ID de la API y el frontend solicita el scope
-        api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user.
+      description: Access token delegado de Microsoft Entra ID. La audiencia esperada
+        es el Application (client) ID de la API y el frontend solicita el scope api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user.
       x-amazon-apigateway-authorizer:
         type: jwt
         identitySource: $request.header.Authorization
         jwtConfiguration:
           issuer: https://login.microsoftonline.com/1feca74f-8331-414a-bd8d-2d687b22a7b3/v2.0
           audience:
-            - 150f51db-4084-4979-b1a1-e6a6e7893a01
+          - 150f51db-4084-4979-b1a1-e6a6e7893a01
       flows:
         authorizationCode:
           authorizationUrl: https://login.microsoftonline.com/1feca74f-8331-414a-bd8d-2d687b22a7b3/oauth2/v2.0/authorize
           tokenUrl: https://login.microsoftonline.com/1feca74f-8331-414a-bd8d-2d687b22a7b3/oauth2/v2.0/token
           scopes:
-            api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user: Acceso delegado a Pedidos360.
+            api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user: Acceso delegado
+              a Pedidos360.
+    CognitoJWT:
+      type: oauth2
+      description: Access token de Amazon Cognito. El App Client usa Authorization
+        Code con PKCE S256, sin client secret. Los servicios exigen issuer Cognito,
+        audience/client_id y token_use=access.
+      x-amazon-apigateway-authorizer:
+        type: jwt
+        identitySource: $request.header.Authorization
+        jwtConfiguration:
+          issuer: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI
+          audience:
+          - 59be26pgg5ginu2sutr8eetgjg
+      x-pkce-code-challenge-method: S256
+      x-client-authentication: none
+      flows:
+        authorizationCode:
+          authorizationUrl: https://us-east-1umehprydi.auth.us-east-1.amazoncognito.com/oauth2/authorize
+          tokenUrl: https://us-east-1umehprydi.auth.us-east-1.amazoncognito.com/oauth2/token
+          scopes:
+            openid: Identidad OIDC.
+            email: Correo del usuario.
+            profile: Perfil del usuario.
   parameters:
     ProductId:
       name: id
@@ -345,41 +696,47 @@ components:
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/Problem"
+            $ref: '#/components/schemas/Problem'
     Unauthorized:
       description: Token ausente, expirado o no válido.
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/Problem"
+            $ref: '#/components/schemas/Problem'
     Forbidden:
       description: El rol o la pertenencia del recurso no permiten la operación.
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/Problem"
+            $ref: '#/components/schemas/Problem'
     NotFound:
       description: Recurso inexistente o no visible para el solicitante.
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/Problem"
+            $ref: '#/components/schemas/Problem'
     Conflict:
       description: La operación contradice el estado actual o una regla de negocio.
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/Problem"
+            $ref: '#/components/schemas/Problem'
     InternalError:
       description: Error interno.
       content:
         application/problem+json:
           schema:
-            $ref: "#/components/schemas/Problem"
+            $ref: '#/components/schemas/Problem'
   schemas:
     Product:
       type: object
-      required: [id, sku, name, price, stock, active]
+      required:
+      - id
+      - sku
+      - name
+      - price
+      - stock
+      - active
       properties:
         id:
           type: string
@@ -409,7 +766,12 @@ components:
           example: true
     ProductInput:
       type: object
-      required: [sku, name, price, stock, active]
+      required:
+      - sku
+      - name
+      - price
+      - stock
+      - active
       properties:
         sku:
           type: string
@@ -436,7 +798,8 @@ components:
           example: true
     StockUpdate:
       type: object
-      required: [stock]
+      required:
+      - stock
       additionalProperties: false
       properties:
         stock:
@@ -445,19 +808,22 @@ components:
           minimum: 0
     OrderCreate:
       type: object
-      required: [items]
+      required:
+      - items
       properties:
         items:
           type: array
           minItems: 1
           items:
-            $ref: "#/components/schemas/OrderCreateItem"
+            $ref: '#/components/schemas/OrderCreateItem'
         notes:
           type: string
           example: Entregar después de las 18:00
     OrderCreateItem:
       type: object
-      required: [productId, quantity]
+      required:
+      - productId
+      - quantity
       properties:
         productId:
           type: string
@@ -469,26 +835,36 @@ components:
           example: 2
     OrderUpdate:
       type: object
-      required: [items]
+      required:
+      - items
       properties:
         items:
           type: array
           minItems: 1
           items:
-            $ref: "#/components/schemas/OrderCreateItem"
+            $ref: '#/components/schemas/OrderCreateItem'
         notes:
           type: string
           maxLength: 1000
     OrderStatusUpdate:
       type: object
-      required: [status]
+      required:
+      - status
       properties:
         status:
-          $ref: "#/components/schemas/OrderStatus"
+          $ref: '#/components/schemas/OrderStatus'
     Order:
       type: object
       required:
-        [id, orderNumber, customerId, status, items, total, stockReserved, createdAt, updatedAt]
+      - id
+      - orderNumber
+      - customerId
+      - status
+      - items
+      - total
+      - stockReserved
+      - createdAt
+      - updatedAt
       properties:
         id:
           type: string
@@ -501,11 +877,11 @@ components:
           description: Claim oid o sub del cliente.
           example: oid-del-cliente
         status:
-          $ref: "#/components/schemas/OrderStatus"
+          $ref: '#/components/schemas/OrderStatus'
         items:
           type: array
           items:
-            $ref: "#/components/schemas/OrderItem"
+            $ref: '#/components/schemas/OrderItem'
         total:
           type: number
           format: double
@@ -519,14 +895,19 @@ components:
         createdAt:
           type: string
           format: date-time
-          example: "2026-09-23T18:00:00Z"
+          example: '2026-09-23T18:00:00Z'
         updatedAt:
           type: string
           format: date-time
-          example: "2026-09-23T18:00:00Z"
+          example: '2026-09-23T18:00:00Z'
     OrderItem:
       type: object
-      required: [productId, productName, quantity, unitPrice, subtotal]
+      required:
+      - productId
+      - productName
+      - quantity
+      - unitPrice
+      - subtotal
       properties:
         productId:
           type: string
@@ -551,7 +932,13 @@ components:
           example: 39980.0
     OrderStatus:
       type: string
-      enum: [CREADO, ACEPTADO, EN_PREPARACION, DESPACHADO, ENTREGADO, CANCELADO]
+      enum:
+      - CREADO
+      - ACEPTADO
+      - EN_PREPARACION
+      - DESPACHADO
+      - ENTREGADO
+      - CANCELADO
     Problem:
       type: object
       properties:

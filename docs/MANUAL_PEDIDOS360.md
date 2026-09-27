@@ -2,7 +2,7 @@
 
 ## 1. Propósito del proyecto
 
-Pedidos360 es una aplicación web para consultar y administrar pedidos, productos, inventario y reservas de stock. El frontend es una SPA React + Vite + TypeScript con Microsoft Entra ID. El backend está compuesto por un BFF Spring Boot, dos microservicios Spring Boot y Oracle.
+Pedidos360 es una aplicación web para consultar y administrar pedidos, productos, inventario y reservas de stock. El frontend es una SPA React + Vite + TypeScript con dos accesos independientes: Microsoft Entra ID para `/api/**` y Amazon Cognito para `/aws/api/**`. El backend está compuesto por un BFF Spring Boot, dos microservicios Spring Boot y Oracle.
 
 Este manual describe la organización del código, el flujo de autenticación, la ejecución local y las fronteras de seguridad. No contiene contraseñas, tokens, connection strings ni secretos de despliegue.
 
@@ -33,24 +33,23 @@ En local, el navegador usa `http://localhost:8080` como URL del BFF. En AWS, el 
 
 | Componente | Ruta | Responsabilidad |
 |---|---|---|
-| Frontend | `frontend-pedidos360/` | SPA React, rutas, guardas, MSAL, cliente HTTP y vistas |
-| BFF | `ms-pedidos360-bff/` | Segunda validación JWT, roles, CORS y proxy privado |
-| Orders | `ms-pedidos360-orders/` | Pedidos, estados, propiedad del cliente y orquestación de stock |
-| Catalog | `ms-pedidos360-catalog/` | Productos, stock y reservas internas |
+| Frontend | `../pedidos360-frontend/` | SPA React, rutas, guardas, MSAL, cliente HTTP y vistas |
+| BFF | `../pedidos360-bff/` | Segunda validación JWT, roles, CORS y proxy privado |
+| Orders | `../pedidos360-orders/` | Pedidos, estados, propiedad del cliente y orquestación de stock |
+| Catalog | `../pedidos360-catalog/` | Productos, stock y reservas internas |
 | Infraestructura | `infra/`, `docker-compose.yml` | Integración local, API Gateway, OpenAPI y Terraform |
 | Base local | Oracle 23 Free | Persistencia separada de catálogo y pedidos |
 | Utilidades | `scripts/` | Arranque, detenimiento, smoke test y provisioning local |
 
 ## 4. Flujo de una solicitud
 
-1. React inicia sesión con Authorization Code + PKCE mediante `@azure/msal-react` y `@azure/msal-browser`.
-2. MSAL obtiene un access token para el scope de la API.
-3. El cliente HTTP de React agrega `Authorization: Bearer <access_token>` a las rutas `/api/**`.
-4. API Gateway valida el token en el despliegue AWS.
-5. El BFF vuelve a validar firma, issuer, audience y vigencia.
-6. El BFF reenvía la solicitud a orders o catalog usando la red privada.
-7. El microservicio aplica autorización por rol y ejecuta la operación.
-8. La respuesta regresa al frontend con el mismo contrato HTTP.
+1. React inicia sesión con Authorization Code + PKCE mediante MSAL para las rutas Entra `/api/**`, o mediante Cognito/OIDC para `/aws/api/**`.
+2. El cliente HTTP agrega el access token del proveedor seleccionado exclusivamente a su namespace.
+3. API Gateway selecciona el authorizer según `/api/**` o `/aws/api/**` y valida el token en AWS.
+4. El BFF y el microservicio vuelven a validar issuer, firma, audience/client ID y vigencia; Cognito exige además `token_use=access`.
+5. El BFF conserva el prefijo del proveedor al reenviar la solicitud a orders o catalog usando la red privada.
+6. El microservicio convierte `roles` o `cognito:groups` en `ROLE_Admin`, `ROLE_Operador` o `ROLE_Cliente` y aplica la autorización.
+7. La respuesta regresa al frontend con el mismo contrato HTTP.
 
 El BFF no tiene JDBC, JPA, datasource ni credenciales de Oracle. Los controles de rol del frontend son solo de usabilidad; la autorización real permanece en el BFF y los microservicios.
 
@@ -63,11 +62,12 @@ El BFF no tiene JDBC, JPA, datasource ni credenciales de Oracle. Los controles d
 - Node.js 26 y npm para React/Vite.
 - Al menos 8 GB de memoria disponible para el stack con Oracle.
 - Microsoft Entra ID configurado para la SPA y la API.
+- Amazon Cognito configurado con App Client público, PKCE S256, callbacks exactos y grupos `Admin`, `Operador`, `Cliente`.
 
 ### Configuración
 
 1. Copiar `.env.example` a `.env`.
-2. Completar los identificadores de Entra y las contraseñas locales de Oracle.
+2. Completar los identificadores de Entra/Cognito y las contraseñas locales de Oracle.
 3. No compartir ni versionar `.env`.
 4. Ejecutar:
 
@@ -81,8 +81,8 @@ El script valida la configuración, construye las imágenes y espera los healthc
 ### Frontend sin Docker
 
 ```bash
-npm --prefix frontend-pedidos360 ci
-npm --prefix frontend-pedidos360 run dev
+npm --prefix ../pedidos360-frontend ci
+npm --prefix ../pedidos360-frontend run dev
 ```
 
 Vite escucha en `http://localhost:4200`. El cliente usa el BFF local y requiere un token de Entra válido para las operaciones protegidas.
@@ -108,8 +108,10 @@ docker compose --env-file .env -f docker-compose.yml down --volumes
 - `src/main.tsx`: punto de entrada, `MsalProvider`, contexto de autenticación y router.
 - `src/App.tsx`: rutas públicas, rutas protegidas y guards.
 - `src/auth/msal.ts`: configuración de la SPA y authority `/v2.0`.
-- `src/auth/AuthContext.tsx`: cuenta activa, claims, roles, `oid`, login y logout.
-- `src/auth/RedirectHandler.tsx`: coordinación del callback de redirect después de la inicialización de MSAL.
+- `src/auth/AuthContext.tsx`: cuenta activa, claims, roles, `oid`, login y logout de Entra.
+- `src/auth/CognitoAuthContext.tsx`: sesión, grupos y access token de Cognito.
+- `src/auth/cognito.ts`: configuración de Authorization Code + PKCE, sin client secret.
+- `src/auth/RedirectHandler.tsx`: callback de Entra; el callback Cognito vive en `/auth/cognito/callback`.
 - `src/api/client.ts`: cliente `fetch`, Bearer y normalización de errores.
 - `src/api/services.ts`: contrato de pedidos y catálogo, normalización y filtros de cliente.
 - `src/pages/`: vistas React de login, dashboard, pedidos y catálogo.
@@ -126,25 +128,29 @@ La configuración se encuentra en `src/config/environment.ts`. Para un ambiente,
 - `API_BASE_URL`.
 - `REDIRECT_URI`.
 - `POST_LOGOUT_REDIRECT_URI`.
+- `COGNITO_USER_POOL_ID`, `COGNITO_USER_POOL_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_ISSUER`, `COGNITO_REDIRECT_URI`, `COGNITO_LOGOUT_URI` y `COGNITO_API_SCOPE`.
 
 La imagen Docker ejecuta `npm run generate:environment` antes de `npm run build`. Los valores deben estar disponibles durante el build; asignar una variable al contenedor en tiempo de ejecución no reescribe un bundle estático.
 
 ### MSAL y seguridad
 
-- La SPA es pública y usa Authorization Code + PKCE.
-- `redirectUri` y `postLogoutRedirectUri` deben coincidir exactamente con Entra.
+- La SPA es pública y usa Authorization Code + PKCE. Cognito usa PKCE S256 y nunca un client secret.
+- `redirectUri` y `postLogoutRedirectUri` deben coincidir exactamente con Entra; `cognitoRedirectUri` y `cognitoLogoutUri` deben coincidir exactamente con Cognito.
+- `cognito:groups` del access token es la única fuente de grupos Cognito; no se usa el ID token para autorizar API.
 - El scope local es `api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user`.
 - `MsalProvider` inicializa MSAL y procesa el callback una sola vez por instancia.
 - `AuthContext` adquiere el token silenciosamente y combina claims del identificador y del access token.
-- `oid` usa fallback a `sub` cuando no existe `oid`.
+- `oid` usa fallback a `sub` para Entra; Cognito usa `sub` directamente.
 - La decodificación visual de un JWT no valida criptográficamente el token. La validación real se hace en API Gateway, BFF y microservicios.
 - Los servicios locales aceptan solo el issuer y la audiencia exactos del tenant en formato v2 o el formato v1 equivalente de Entra (`sts.windows.net` y `api://{client-id}`); no se validan comodines.
-- El código no contiene ni muestra contraseñas, client secrets ni tokens; MSAL administra únicamente la caché temporal de la sesión.
+- El código no contiene ni muestra contraseñas, client secrets ni tokens; Cognito usa `sessionStorage` con fallback de memoria y el frontend solo solicita el access token al proveedor activo.
 
 ### Rutas principales
 
-- `/login`: inicio de sesión público.
-- `/dashboard`: resumen y pedidos recientes; requiere sesión.
+- `/login`: inicio de sesión público con Entra o Cognito.
+- `/auth/cognito/callback`: callback de Cognito.
+- `/aws`: portal Cognito que usa exclusivamente `/aws/api/**`.
+- `/dashboard`: resumen y pedidos recientes; requiere sesión Entra.
 - `/orders`: lista, creación y seguimiento; requiere sesión.
 - `/catalog`: administración de productos y stock; requiere `Admin` u `Operador`.
 
@@ -154,12 +160,12 @@ La imagen Docker ejecuta `npm run generate:environment` antes de `npm run build`
 
 React consume solamente estas rutas públicas del BFF:
 
-- `GET/POST /api/orders`.
-- `GET/PUT/DELETE /api/orders/{id}`.
-- `PATCH /api/orders/{id}/status`.
-- `GET/POST /api/catalog/products`.
-- `GET/PUT/DELETE /api/catalog/products/{id}`.
-- `PATCH /api/catalog/products/{id}/stock`.
+- `GET/POST /api/orders` y sus equivalentes `/aws/api/orders`.
+- `GET/PUT/DELETE /api/orders/{id}` y sus equivalentes `/aws/api/orders/{id}`.
+- `PATCH /api/orders/{id}/status` y su equivalente Cognito.
+- `GET/POST /api/catalog/products` y sus equivalentes Cognito.
+- `GET/PUT/DELETE /api/catalog/products/{id}` y sus equivalentes Cognito.
+- `PATCH /api/catalog/products/{id}/stock` y su equivalente Cognito.
 
 El cliente agrega el Bearer y convierte errores HTTP en `ApiError`. Los identificadores se codifican con `encodeURIComponent`. No se consumen endpoints internos de reservations ni URLs privadas de microservicios.
 
@@ -172,15 +178,15 @@ El cliente agrega el Bearer y convierte errores HTTP en `ApiError`. Los identifi
 5. Ejecutar:
 
 ```bash
-npm --prefix frontend-pedidos360 test
-npm --prefix frontend-pedidos360 run build
+npm --prefix ../pedidos360-frontend test
+npm --prefix ../pedidos360-frontend run build
 ```
 
 ## 7. BFF Spring Boot
 
 ### Responsabilidades
 
-`ms-pedidos360-bff` valida el JWT con Spring Security Resource Server. Configura CORS para el origen exacto del frontend y aplica reglas de autorización a las operaciones de administración.
+`ms-pedidos360-bff` valida dos cadenas JWT independientes con Spring Security Resource Server: Entra para `/api/**` y Cognito para `/aws/api/**`. Configura CORS para el origen exacto del frontend y aplica reglas de autorización a las operaciones de administración.
 
 El proxy utiliza `RestClient` y `JdkClientHttpRequestFactory` para soportar todos los métodos HTTP, incluido `PATCH`.
 
@@ -227,7 +233,7 @@ Hay dos usuarios Oracle independientes:
 
 ## 11. AWS
 
-Terraform crea el esqueleto de API Gateway, authorizer JWT, CORS, VPC Link e integración privada. No crea por sí solo la VPC, el runtime compute, el listener privado ni Oracle gestionado.
+Terraform crea el esqueleto de API Gateway con dos authorizers, CORS, VPC Link, integración privada y repositorios ECR. No crea por sí solo la VPC, el runtime compute, el listener privado ni Oracle gestionado.
 
 Antes de `terraform apply` deben existir:
 
@@ -246,17 +252,17 @@ La URL pública que recibe React debe ser el output de API Gateway. Nunca se deb
 ### Backends
 
 ```bash
-mvn -f ms-pedidos360-catalog/pom.xml clean verify
-mvn -f ms-pedidos360-orders/pom.xml clean verify
-mvn -f ms-pedidos360-bff/pom.xml clean verify
+mvn -f ../pedidos360-catalog/pom.xml clean verify
+mvn -f ../pedidos360-orders/pom.xml clean verify
+mvn -f ../pedidos360-bff/pom.xml clean verify
 ```
 
 ### Frontend
 
 ```bash
-npm --prefix frontend-pedidos360 ci
-npm --prefix frontend-pedidos360 test
-npm --prefix frontend-pedidos360 run build
+npm --prefix ../pedidos360-frontend ci
+npm --prefix ../pedidos360-frontend test
+npm --prefix ../pedidos360-frontend run build
 npm --prefix frontend-pedidos360 audit --omit=dev --audit-level=high
 ```
 
