@@ -109,5 +109,9 @@ resource "terraform_data" "preconditions" {
       condition     = var.create_rds_oracle || (var.oracle_host != null && trimspace(var.oracle_host) != "")
       error_message = "Define oracle_host o habilita create_rds_oracle para que catalog y orders tengan una base de datos."
     }
+    precondition {
+      condition     = var.nat_gateway_count <= length(var.availability_zone_names)
+      error_message = "nat_gateway_count no puede superar el número de Availability Zones."
+    }
   }
 }

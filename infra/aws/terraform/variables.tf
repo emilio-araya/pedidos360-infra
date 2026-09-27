@@ -175,8 +175,11 @@ variable "nat_gateway_count" {
   default     = 1
 
   validation {
-    condition     = var.nat_gateway_count >= 1 && var.nat_gateway_count <= length(var.availability_zone_names)
-    error_message = "nat_gateway_count debe estar entre 1 y el número de zonas."
+    # La condicion de una variable solo puede referirse a si misma en Terraform
+    # anterior a 1.9, asi que aqui se acota a un maximo absoluto. La comprobacion
+    # contra el numero de zonas vive en el precondition de terraform_data.
+    condition     = var.nat_gateway_count >= 1 && var.nat_gateway_count <= 8
+    error_message = "nat_gateway_count debe estar entre 1 y 8."
   }
 }
 

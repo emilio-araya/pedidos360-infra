@@ -20,7 +20,7 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.6
+          terraform_version: 1.9.8
       - name: Terraform format
         run: |
           terraform -chdir=infra/aws/terraform fmt -check -recursive
