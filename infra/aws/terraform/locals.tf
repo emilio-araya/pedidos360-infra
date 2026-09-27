@@ -81,11 +81,15 @@ locals {
     orders  = "orders.${var.service_discovery_namespace}"
   }
 
-  # El origen permitido por CORS es siempre el dominio de CloudFront; las
-  # variables son adicionales y opcionales.
-  frontend_origin = "https://${aws_cloudfront_distribution.frontend.domain_name}"
+  # El origen del frontend se recibe por variable y NO se lee de la distribucion
+  # de CloudFront. Si se leyera, la API quedaria encadenada al frontend y no
+  # podria crearse sin permisos de CloudFront y de S3.
+  frontend_origin = var.frontend_origin == null ? null : "https://${var.frontend_origin}"
 
-  allowed_origins = sort(distinct(concat([local.frontend_origin], tolist(var.allowed_origins))))
+  allowed_origins = sort(distinct(concat(
+    compact([local.frontend_origin]),
+    tolist(var.allowed_origins),
+  )))
 
   oracle_endpoint = var.create_rds_oracle ? aws_db_instance.oracle[0].address : var.oracle_host
 

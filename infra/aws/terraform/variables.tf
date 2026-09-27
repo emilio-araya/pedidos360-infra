@@ -105,6 +105,17 @@ variable "allowed_origins" {
   }
 }
 
+variable "frontend_origin" {
+  description = <<-EOT
+    Host del frontend, sin esquema, por ejemplo d123.cloudfront.net. Es el
+    origen permitido por CORS. Se declara como variable y no se lee de la
+    distribucion de CloudFront para que la API Gateway no dependa del frontend:
+    en el primer despliegue puede quedar en null y agregarse en el segundo.
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "bff_integration_uri" {
   description = <<-EOT
     Opcional. ARN del listener privado (ALB/NLB) que entrega las rutas al BFF.
