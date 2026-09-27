@@ -124,6 +124,13 @@ check "cognito_scope_requirement" {
   }
 }
 
+check "cors_origin_configured" {
+  assert {
+    condition     = length(local.allowed_origins) > 0
+    error_message = "No hay origenes CORS configurados. Es esperable en la primera fase, cuando la API se despliega antes que el frontend. Antes de publicar el frontend, vuelve a aplicar con frontend_origin."
+  }
+}
+
 check "private_backend_only" {
   assert {
     condition     = !contains(local.allowed_origins, "*")

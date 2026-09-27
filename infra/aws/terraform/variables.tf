@@ -350,6 +350,26 @@ variable "rds_oracle_license_model" {
   }
 }
 
+variable "rds_oracle_engine" {
+  description = <<-EOT
+    Motor de RDS para Oracle. No se deduce de la version: "19" no es un motor
+    valido. Valores habituales: oracle-ee, oracle-se2, oracle-se2-ee.
+  EOT
+  type        = string
+  default     = "oracle-ee"
+
+  validation {
+    condition     = can(regex("^oracle-", var.rds_oracle_engine))
+    error_message = "rds_oracle_engine debe empezar por 'oracle-'."
+  }
+}
+
+variable "rds_oracle_parameter_group_family" {
+  description = "Familia del grupo de parametros, por ejemplo oracle-ee-19. Es independiente de la version exacta."
+  type        = string
+  default     = "oracle-ee-19"
+}
+
 variable "rds_oracle_instance_class" {
   description = "Clase de instancia de RDS para Oracle."
   type        = string

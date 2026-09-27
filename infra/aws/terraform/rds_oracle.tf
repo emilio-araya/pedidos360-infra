@@ -30,7 +30,7 @@ resource "aws_db_parameter_group" "oracle" {
 
   name        = "${local.name}-oracle"
   description = "Parametrizacion de Pedidos360 para Oracle"
-  family      = split(".", var.rds_oracle_engine_version)[0]
+  family      = var.rds_oracle_parameter_group_family
 
   parameter {
     name  = "open_cursors"
@@ -44,7 +44,7 @@ resource "aws_db_instance" "oracle" {
   count = var.create_rds_oracle ? 1 : 0
 
   identifier     = "${local.name}-oracle"
-  engine         = split(".", var.rds_oracle_engine_version)[0]
+  engine         = var.rds_oracle_engine
   engine_version = var.rds_oracle_engine_version
   license_model  = var.rds_oracle_license_model
 

@@ -98,6 +98,30 @@ No escribas la contraseña en el comando: queda en el historial del shell y en l
 lista de procesos. No la pegues en este repositorio, en un `.tfvars` ni en un
 chat.
 
+## 3.1 CORS y despliegue por fases
+
+La configuracion de CORS de API Gateway y del BFF **no** se lee de la
+distribucion de CloudFront. Si lo hiciera, la API quedaria encadenada al
+frontend y no podria crearse sin permisos de CloudFront y de S3.
+
+El origen se declara con la variable `frontend_origin`. Eso obliga a desplegar
+en tres fases:
+
+```text
+Fase 1  red y VPC Link                    sin frontend todavia
+Fase 2  API Gateway con frontend_origin="" (o sin definirlo)
+Fase 3  frontend en CloudFront, leer el dominio de la distribucion
+        y volver a aplicar con
+        -var frontend_origin=d123.cloudfront.net
+```
+
+Mientras `frontend_origin` este vacio, Terraform emite un aviso en el plan
+indicando que el origen queda pendiente. Es intencional: desplegar la API sin
+CORS es aceptable en la fase 2, pero no sirve para publicar el frontend.
+
+En GitHub, la variable del environment es `FRONTEND_ORIGIN` y el workflow la
+pasa como `TF_VAR_FRONTEND_ORIGIN`.
+
 ## 4. Imagen y despliegue
 
 ```bash

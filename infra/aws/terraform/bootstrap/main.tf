@@ -229,7 +229,42 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["arn:${local.partition}:ecr:${local.region}:${local.account_id}:repository/${var.ecr_repository_prefix}*"]
   }
 
-  # Despliegue del frontend estático.
+  # Backend remoto de Terraform. El workflow asume este rol ANTES de
+  # terraform init, asi que sin estos permisos la primera ejecucion falla con
+  # AccessDenied sobre el bucket de estado y la tabla de bloqueo.
+  statement {
+    sid    = "StateBucketList"
+    effect = "Allow"
+    actions = [
+      "s3:ListBucket",
+    ]
+    resources = [aws_s3_bucket.state.arn]
+  }
+
+  statement {
+    sid    = "StateBucketObjects"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = ["${aws_s3_bucket.state.arn}/*"]
+  }
+
+  statement {
+    sid    = "StateLockTable"
+    effect = "Allow"
+    actions = [
+      "dynamodb:DescribeTable",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:DeleteItem",
+    ]
+    resources = [aws_dynamodb_table.state_locks.arn]
+  }
+
+  # Despliegue del frontend estatico.
   statement {
     sid    = "FrontendBucket"
     effect = "Allow"
@@ -251,11 +286,72 @@ data "aws_iam_policy_document" "deploy" {
     resources = ["arn:${local.partition}:s3:::${var.frontend_bucket_prefix}*/**"]
   }
 
-  # La distribución es pública; invalidar caché es una operación de bajo riesgo.
+  # El modulo crea los repositorios ECR, no solo publica imagenes. Sin esto la
+  # creacion falla en el primer apply.
+  statement {
+    sid    = "EcrRepositoryManagement"
+    effect = "Allow"
+    actions = [
+      "ecr:CreateRepository",
+      "ecr:DeleteRepository",
+      "ecr:DescribeRepositories",
+      "ecr:GetRepositoryPolicy",
+      "ecr:SetRepositoryPolicy",
+      "ecr:DeleteRepositoryPolicy",
+      "ecr:TagResource",
+      "ecr:UntagResource",
+      "ecr:ListTagsForResource",
+    ]
+    resources = ["arn:${local.partition}:ecr:${local.region}:${local.account_id}:repository/${var.ecr_repository_prefix}*"]
+  }
+
+  # El modulo tambien crea el bucket del frontend, no solo lo escribe.
+  statement {
+    sid    = "FrontendBucketManagement"
+    effect = "Allow"
+    actions = [
+      "s3:CreateBucket",
+      "s3:DeleteBucket",
+      "s3:GetBucketPolicy",
+      "s3:PutBucketPolicy",
+      "s3:DeleteBucketPolicy",
+      "s3:GetBucketVersioning",
+      "s3:PutBucketVersioning",
+      "s3:GetEncryptionConfiguration",
+      "s3:PutEncryptionConfiguration",
+      "s3:GetPublicAccessBlock",
+      "s3:PutPublicAccessBlock",
+      "s3:GetBucketOwnershipControls",
+      "s3:PutBucketOwnershipControls",
+      "s3:PutLifecycleConfiguration",
+      "s3:GetBucketTagging",
+      "s3:PutBucketTagging",
+    ]
+    resources = ["arn:${local.partition}:s3:::${var.frontend_bucket_prefix}*"]
+  }
+
+  # CloudFront no soporta autorizacion a nivel de recurso para estas acciones,
+  # por lo que el alcance es la cuenta. Se limitan a operaciones de la
+  # distribucion del frontend, mas la invalidacion de cache.
   statement {
     sid    = "CloudFrontInvalidation"
     effect = "Allow"
     actions = [
+      "cloudfront:CreateDistribution",
+      "cloudfront:GetDistribution",
+      "cloudfront:UpdateDistribution",
+      "cloudfront:DeleteDistribution",
+      "cloudfront:CreateOriginAccessControl",
+      "cloudfront:GetOriginAccessControl",
+      "cloudfront:UpdateOriginAccessControl",
+      "cloudfront:DeleteOriginAccessControl",
+      "cloudfront:CreateResponseHeadersPolicy",
+      "cloudfront:GetResponseHeadersPolicy",
+      "cloudfront:UpdateResponseHeadersPolicy",
+      "cloudfront:DeleteResponseHeadersPolicy",
+      "cloudfront:TagResource",
+      "cloudfront:UntagResource",
+      "cloudfront:ListTagsForResource",
       "cloudfront:CreateInvalidation",
       "cloudfront:GetInvalidation",
     ]

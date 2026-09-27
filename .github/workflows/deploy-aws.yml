@@ -44,6 +44,7 @@ jobs:
       TF_VAR_COGNITO_AUTHORIZATION_SCOPES: ${{ vars.COGNITO_AUTHORIZATION_SCOPES || '["openid"]' }}
       TF_VAR_API_NAME: ${{ vars.API_NAME || 'pedidos360-api' }}
       TF_VAR_ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS || '[]' }}
+      TF_VAR_FRONTEND_ORIGIN: ${{ vars.FRONTEND_ORIGIN }}
       TF_VAR_VPC_CIDR: ${{ vars.VPC_CIDR || '10.20.0.0/16' }}
       TF_VAR_AVAILABILITY_ZONE_NAMES: ${{ vars.AVAILABILITY_ZONE_NAMES || '["us-east-1a","us-east-1b"]' }}
       TF_VAR_NAT_GATEWAY_COUNT: ${{ vars.NAT_GATEWAY_COUNT || '1' }}
