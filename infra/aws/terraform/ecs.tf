@@ -105,7 +105,10 @@ resource "aws_ecs_cluster" "main" {
 resource "aws_iam_role" "task_execution" {
   for_each = local.service_sg_ids
 
-  name_prefix        = "${local.name}-${each.key}-exec-"
+  name_prefix = "${local.name}-${each.key}-exec-"
+  # El path hace que el ARN sea role/pedidos360/... y no role/pedidos360-...,
+  # que es lo que concede el permiso de IAM del rol de despliegue.
+  path               = "/${local.name}/"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume_role.json
   description        = "Rol de ejecución de tareas de ${each.key}"
 
@@ -143,6 +146,16 @@ resource "aws_iam_role_policy" "task_execution_secrets" {
           "secretsmanager:GetSecretValue",
         ]
         Resource = [local.database_secret_arns[each.key]]
+      },
+      {
+        # El secreto esta cifrado con una clave propia. Sin esto, ECS no puede
+        # inyectarlo en el contenedor y la tarea no arranca.
+        Sid    = "DecryptOwnDatabaseSecret"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+        ]
+        Resource = [aws_kms_key.secrets.arn]
       },
     ]
   })
@@ -244,6 +257,7 @@ resource "aws_iam_role" "task" {
   for_each = local.service_sg_ids
 
   name_prefix        = "${local.name}-${each.key}-task-"
+  path               = "/${local.name}/"
   assume_role_policy = data.aws_iam_policy_document.ecs_assume_role.json
   description        = "Rol de aplicación de ${each.key}; sin permisos de AWS"
 
