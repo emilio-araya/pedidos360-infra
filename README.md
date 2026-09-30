@@ -1,5 +1,10 @@
 # Pedidos360 infrastructure
 
+[![CI](https://github.com/emilio-araya/pedidos360-infra/actions/workflows/ci.yml/badge.svg)](https://github.com/emilio-araya/pedidos360-infra/actions/workflows/ci.yml)
+[![Terraform](https://img.shields.io/badge/Terraform-1.9.8-7B42BC?logo=terraform&logoColor=white)](https://www.terraform.io)
+[![AWS](https://img.shields.io/badge/AWS-232F3E?logo=amazonaws&logoColor=white)](https://aws.amazon.com)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)](https://www.docker.com)
+
 Repository central de infraestructura de Pedidos360. Contiene Docker Compose, Terraform, OpenAPI, scripts y documentación compartida.
 
 ## Repositorios hermanos
@@ -48,9 +53,27 @@ docker compose --env-file .env -f docker-compose.yml down --volumes
 
 ## AWS
 
-La capa de API Gateway está en `infra/aws/terraform`. BFF, Catalog, Orders y Oracle deben ejecutarse en una VPC privada; API Gateway es la única entrada pública del backend. El despliegue completo requiere configurar VPC, runtime privado, Oracle, secretos, imágenes y el rol OIDC de GitHub antes de ejecutar `apply`.
+La capa de API Gateway está en `infra/aws/terraform`. BFF, Catalog, Orders y Oracle se despliegan en una VPC privada; API Gateway es la única entrada pública del backend.
 
-El contrato público está en `infra/aws/openapi.yaml`.
+### Estado del despliegue
+
+La capa de red y la puerta de entrada **están aplicadas y verificadas** en una cuenta de laboratorio. El runtime y la base de datos están escritos y validados, pero su aplicación quedó bloqueada.
+
+| Componente | Estado | Detalle |
+|---|---|---|
+| VPC `10.20.0.0/16` | aplicado | 4 subredes en 2 AZ, subredes de aplicación sin IP pública |
+| Security groups | aplicado | 6 grupos, tráfico entre capas restringido |
+| NAT gateway | aplicado | salida a internet desde subredes privadas |
+| ALB interno | aplicado | única entrada al BFF, sin exposición a Internet |
+| VPC Link | aplicado | enlace privado hacia el ALB |
+| API Gateway | aplicado | 2 authorizers (Entra y Cognito), 24 rutas, stage `$default` |
+| Bootstrap de Terraform | aplicado | bucket de estado, lock en DynamoDB, OIDC de GitHub, rol de despliegue |
+| ECS Fargate | bloqueado | el rol del laboratorio no tiene permisos y la organización aplica una SCP que lo impide |
+| Secrets Manager | bloqueado | mismo bloqueo de permisos |
+| CloudFront + S3 | bloqueado | depende de que la API esté viva primero (desacople de CORS) |
+| RDS Oracle | pendiente | requiere una decisión de licencia antes de crearlo |
+
+La verificación ejecutada sobre lo aplicado cubrió: `/api/**` y `/aws/api/**` sin token devuelven `401`; rutas fuera del contrato y operaciones internas devuelven `404`; el ALB no responde desde Internet. El contrato público está en `infra/aws/openapi.yaml` y el procedimiento de despliegue por fases en `docs/DESPLIEGUE_AWS.md`.
 
 ## Base de datos
 
