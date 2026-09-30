@@ -1,11 +1,13 @@
 # Configuración de Amazon Cognito
 
+> **Alcance.** El enunciado pide Microsoft Entra ID. El namespace `/aws/api/**` con Amazon Cognito es una **extensión propia**, agregada para demostrar el aislamiento de dos cadenas de seguridad. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance".
+
 Pedidos360 usa dos proveedores de identidad con namespaces separados:
 
 | Namespace | Proveedor | Issuer | Rutas |
 |---|---|---|---|
 | `/api/**` | Microsoft Entra ID | `https://login.microsoftonline.com/1feca74f-8331-414a-bd8d-2d687b22a7b3/v2.0` | `/api/**` |
-| `/aws/api/**` | Amazon Cognito | `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI` | `/aws/api/**` |
+| `/aws/api/**` | Amazon Cognito | `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example` | `/aws/api/**` |
 
 Un token de un proveedor no se acepta en el namespace del otro. API Gateway, BFF, Catalog y Orders tienen authorizers/validadores separados.
 
@@ -14,11 +16,11 @@ Un token de un proveedor no se acepta en el namespace del otro. API Gateway, BFF
 Estos identificadores no son secretos y pueden estar en variables de GitHub Actions o en el build de la SPA:
 
 ```dotenv
-COGNITO_USER_POOL_ID=us-east-1_UmEhPRYdI
-COGNITO_USER_POOL_CLIENT_ID=59be26pgg5ginu2sutr8eetgjg
-COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI
-COGNITO_JWK_SET_URI=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI/.well-known/jwks.json
-COGNITO_API_AUDIENCE=59be26pgg5ginu2sutr8eetgjg
+COGNITO_USER_POOL_ID=us-east-1_example
+COGNITO_USER_POOL_CLIENT_ID=example-client-id
+COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example
+COGNITO_JWK_SET_URI=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example/.well-known/jwks.json
+COGNITO_API_AUDIENCE=example-client-id
 COGNITO_DOMAIN=us-east-1umehprydi.auth.us-east-1.amazoncognito.com
 COGNITO_REDIRECT_URI=http://localhost:4200/auth/cognito/callback
 COGNITO_LOGOUT_URI=http://localhost:4200/login
@@ -72,9 +74,9 @@ El callback de Entra continúa siendo `/login` y el callback de Cognito es separ
 Los tres servicios reciben los valores desde el entorno/Secrets Manager de AWS:
 
 ```dotenv
-COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI
-COGNITO_API_AUDIENCE=59be26pgg5ginu2sutr8eetgjg
-COGNITO_JWK_SET_URI=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI/.well-known/jwks.json
+COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example
+COGNITO_API_AUDIENCE=example-client-id
+COGNITO_JWK_SET_URI=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example/.well-known/jwks.json
 ```
 
 No activar el perfil `local` en AWS. El HMAC local es solo para desarrollo.

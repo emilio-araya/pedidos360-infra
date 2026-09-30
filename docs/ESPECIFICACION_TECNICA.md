@@ -1,5 +1,7 @@
 # Especificación técnica compartida — Pedidos360
 
+> **Alcance.** El enunciado pide Microsoft Entra ID. El namespace `/aws/api/**` con Amazon Cognito es una **extensión propia**, agregada para demostrar el aislamiento de dos cadenas de seguridad. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance".
+
 ## Arquitectura
 
 ```text
@@ -153,10 +155,10 @@ Respuesta de pedido:
 ## Identidad y JWT
 
 - Frontend SPA Entra: `frontend-pedidos360`, callback `/login`.
-- Frontend Cognito: App Client `59be26pgg5ginu2sutr8eetgjg`, callback `/auth/cognito/callback`.
+- Frontend Cognito: App Client `example-client-id`, callback `/auth/cognito/callback`.
 - APIscope Entra: `api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user`.
 - Audience esperado de Entra: identificador de la API en formato v2 o `api://{client-id}` cuando el registro de Entra emita un token v1.
-- Cognito: issuer `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI`, audience/client ID `59be26pgg5ginu2sutr8eetgjg` y `token_use=access` obligatorio.
+- Cognito: issuer `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example`, audience/client ID `example-client-id` y `token_use=access` obligatorio.
 - Claims utilizados: `oid`/`sub` y `roles`/`cognito:groups`.
 - Validación obligatoria por proveedor: firma, `iss`, audience/client ID, `exp`, `nbf` y `token_use` para Cognito.
 - Perfil local para desarrollo: JWT HMAC únicamente bajo el perfil Spring `local`; nunca habilitar en cloud.

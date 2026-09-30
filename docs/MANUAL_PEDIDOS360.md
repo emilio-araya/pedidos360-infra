@@ -1,5 +1,7 @@
 # Manual técnico de Pedidos360
 
+> **Alcance.** El enunciado pide Microsoft Entra ID. El namespace `/aws/api/**` con Amazon Cognito es una **extensión propia**, agregada para demostrar el aislamiento de dos cadenas de seguridad. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance".
+
 ## 1. Propósito del proyecto
 
 Pedidos360 es una aplicación web para consultar y administrar pedidos, productos, inventario y reservas de stock. El frontend es una SPA React + Vite + TypeScript con dos accesos independientes: Microsoft Entra ID para `/api/**` y Amazon Cognito para `/aws/api/**`. El backend está compuesto por un BFF Spring Boot, dos microservicios Spring Boot y Oracle.

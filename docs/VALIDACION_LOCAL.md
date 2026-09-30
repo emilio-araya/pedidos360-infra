@@ -1,5 +1,7 @@
 # Reporte de validación local — Pedidos360
 
+> **Alcance.** El enunciado pide Microsoft Entra ID. El namespace `/aws/api/**` con Amazon Cognito es una **extensión propia**, agregada para demostrar el aislamiento de dos cadenas de seguridad. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance".
+
 **Fecha:** 2026-09-24  
 **Entorno:** Linux, Java 17.0.20.1, Maven 3.9.16, Node.js 26.10.0 y npm 12.1.0.
 
@@ -9,11 +11,11 @@ La implementación local pasó compilación, pruebas automatizadas, análisis es
 
 | Componente | Resultado |
 |---|---|
-| `pedidos360-catalog` | 19 pruebas, 0 fallos; SpotBugs sin hallazgos no excluidos |
-| `pedidos360-orders` | 33 pruebas, 0 fallos; SpotBugs sin hallazgos no excluidos |
-| `pedidos360-bff` | 21 pruebas, 0 fallos; SpotBugs sin hallazgos |
+| `pedidos360-catalog` | 24 pruebas, 0 fallos; SpotBugs sin hallazgos no excluidos |
+| `pedidos360-orders` | 37 pruebas, 0 fallos; SpotBugs sin hallazgos no excluidos |
+| `pedidos360-bff` | 26 pruebas, 0 fallos; SpotBugs sin hallazgos |
 | `pedidos360-frontend` | 23 pruebas, 0 fallos; TypeScript, Vite build y bundle Nginx correctos |
-| Total automatizado | **96 pruebas, 0 fallos** |
+| Total automatizado | **110 pruebas, 0 fallos** |
 
 Comandos principales:
 

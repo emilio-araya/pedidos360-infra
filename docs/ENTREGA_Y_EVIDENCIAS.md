@@ -1,5 +1,7 @@
 # Entrega y evidencias
 
+> **Alcance.** El enunciado pide Microsoft Entra ID. El namespace `/aws/api/**` con Amazon Cognito es una **extensión propia**, agregada para demostrar el aislamiento de dos cadenas de seguridad. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance".
+
 Este documento define el inventario, las verificaciones y el paquete de evidencia de Pedidos360. Una captura correcta de ejecución no sustituye las pruebas de seguridad, autorización, stock ni transiciones.
 
 ## 1. Inventario de entrega

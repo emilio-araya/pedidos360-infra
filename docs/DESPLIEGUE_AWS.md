@@ -1,5 +1,7 @@
 # Despliegue en AWS
 
+> **Alcance.** El enunciado pide Microsoft Entra ID. El namespace `/aws/api/**` con Amazon Cognito es una **extensión propia**, agregada para demostrar el aislamiento de dos cadenas de seguridad. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance".
+
 ## Alcance
 
 La configuración de `infra/aws/terraform` crea la infraestructura del Caso 0 completa: VPC con subredes públicas, de aplicación y de datos; NAT Gateway y VPC Endpoints; ALB interno; cluster de ECS Fargate con `bff`, `catalog` y `orders`; descubrimiento privado con Cloud Map; Secrets Manager con KMS; repositorios ECR; API Gateway HTTP API con los dos authorizers; y el frontend estático en S3 con CloudFront.
@@ -56,16 +58,16 @@ No usar el secreto HMAC del perfil `local` en AWS. Antes de aplicar Terraform, c
 
 ## 1.1 Configurar Cognito para `/aws/api`
 
-Seguir `docs/CONFIGURACION_COGNITO.md`. El App Client `59be26pgg5ginu2sutr8eetgjg` debe tener solo Authorization Code, PKCE S256, sin client secret, y callbacks exactos para `/auth/cognito/callback`. Los grupos `Admin`, `Operador` y `Cliente` se asignan a usuarios del User Pool `us-east-1_UmEhPRYdI`.
+Seguir `docs/CONFIGURACION_COGNITO.md`. El App Client debe tener solo Authorization Code, PKCE S256, sin client secret, y callbacks exactos para `/auth/cognito/callback`. Los grupos `Admin`, `Operador` y `Cliente` se asignan a usuarios del User Pool configurado en cada entorno.
 
 Las variables públicas para BFF, Catalog, Orders y frontend son:
 
 ```dotenv
-COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI
-COGNITO_API_AUDIENCE=59be26pgg5ginu2sutr8eetgjg
-COGNITO_JWK_SET_URI=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_UmEhPRYdI/.well-known/jwks.json
-COGNITO_USER_POOL_ID=us-east-1_UmEhPRYdI
-COGNITO_USER_POOL_CLIENT_ID=59be26pgg5ginu2sutr8eetgjg
+COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example
+COGNITO_API_AUDIENCE=example-client-id
+COGNITO_JWK_SET_URI=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example/.well-known/jwks.json
+COGNITO_USER_POOL_ID=us-east-1_example
+COGNITO_USER_POOL_CLIENT_ID=example-client-id
 COGNITO_DOMAIN=us-east-1umehprydi.auth.us-east-1.amazoncognito.com
 ```
 
