@@ -122,11 +122,11 @@ Las cifras reales de la entrega, que superan el mínimo del enunciado porque se 
 
 | Repositorio | Pruebas | Fallos |
 |---|---|---|
-| frontend | 58 | 0 |
+| frontend | 62 | 0 |
 | bff | 26 | 0 |
 | catalog | 24 | 0 |
 | orders | 37 | 0 |
-| **total** | **145** | **0** |
+| **total** | **149** | **0** |
 
 - Smoke local: pedidos, ownership, transiciones, stock y namespaces Entra/Cognito.
 - Terraform: `fmt` y `validate` correctos.

@@ -14,8 +14,8 @@ La implementación local pasó compilación, pruebas automatizadas, análisis es
 | `pedidos360-catalog` | 24 pruebas, 0 fallos; SpotBugs sin hallazgos no excluidos |
 | `pedidos360-orders` | 37 pruebas, 0 fallos; SpotBugs sin hallazgos no excluidos |
 | `pedidos360-bff` | 26 pruebas, 0 fallos; SpotBugs sin hallazgos |
-| `pedidos360-frontend` | 58 pruebas, 0 fallos; TypeScript, Vite build y bundle Nginx correctos |
-| Total automatizado | **145 pruebas, 0 fallos** |
+| `pedidos360-frontend` | 62 pruebas, 0 fallos; TypeScript, Vite build y bundle Nginx correctos |
+| Total automatizado | **149 pruebas, 0 fallos** |
 
 Comandos principales:
 
@@ -75,14 +75,14 @@ Durante esta revisión también se detectó y corrigió una incompatibilidad rea
 | Build parametrizable de React + Vite | Compila con IDs y URL de API sustituidos; imagen Nginx construida desde `dist/` |
 | Docker/Oracle | Stack integrado `healthy`: Oracle, catalog, orders, BFF y frontend; principals separados para catalog/orders |
 | Redirect URI SPA | Build Docker verificado con `http://localhost:4200/login`; el bundle no contiene `app.example.com` |
-| Callbacks de identidad | Entra procesa `/login`; Cognito procesa `/auth/cognito/callback`; 58 pruebas frontend aprobadas |
+| Callbacks de identidad | Entra procesa `/login`; Cognito procesa `/auth/cognito/callback`; 62 pruebas frontend aprobadas |
 | Compatibilidad JWT local | Validadores Backend aceptan v1/v2 exactos para el mismo tenant y API; token real debe comprobarse después del rebuild |
 
 ## Integración Cognito añadida
 
 La rama `feature/cognito-aws` agrega el segundo proveedor sin cambiar el namespace de Entra:
 
-- frontend React con login Cognito Authorization Code + PKCE S256, callback separado `/auth/cognito/callback` y 58 pruebas frontend;
+- frontend React con login Cognito Authorization Code + PKCE S256, callback separado `/auth/cognito/callback` y 62 pruebas frontend;
 - BFF, Catalog y Orders con cadenas/validadores separados para Entra `/api/**` y Cognito `/aws/api/**`;
 - validadores de issuer, audience/client ID, `token_use=access` y grupos `cognito:groups`;
 - Terraform con dos authorizers, rutas duplicadas y repositorios ECR;
