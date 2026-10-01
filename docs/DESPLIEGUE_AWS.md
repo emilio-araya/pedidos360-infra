@@ -1,6 +1,6 @@
 # Despliegue en AWS
 
-> **Alcance.** El enunciado pide Microsoft Entra ID. El namespace `/aws/api/**` con Amazon Cognito es una **extensión propia**, agregada para demostrar el aislamiento de dos cadenas de seguridad. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance".
+> **Alcance.** El sistema usa dos proveedores de identidad conviviendo: Entra ID en `/api/**` y Amazon Cognito en `/aws/api/**`, con cadenas de seguridad separadas. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
 
 ## Alcance
 

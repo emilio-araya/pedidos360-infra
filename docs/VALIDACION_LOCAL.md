@@ -1,6 +1,6 @@
 # Reporte de validación local — Pedidos360
 
-> **Alcance.** El enunciado pide Microsoft Entra ID. El namespace `/aws/api/**` con Amazon Cognito es una **extensión propia**, agregada para demostrar el aislamiento de dos cadenas de seguridad. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance".
+> **Alcance.** El sistema usa dos proveedores de identidad conviviendo: Entra ID en `/api/**` y Amazon Cognito en `/aws/api/**`, con cadenas de seguridad separadas. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
 
 **Fecha:** 2026-09-24  
 **Entorno:** Linux, Java 17.0.20.1, Maven 3.9.16, Node.js 26.10.0 y npm 12.1.0.
@@ -14,8 +14,8 @@ La implementación local pasó compilación, pruebas automatizadas, análisis es
 | `pedidos360-catalog` | 24 pruebas, 0 fallos; SpotBugs sin hallazgos no excluidos |
 | `pedidos360-orders` | 37 pruebas, 0 fallos; SpotBugs sin hallazgos no excluidos |
 | `pedidos360-bff` | 26 pruebas, 0 fallos; SpotBugs sin hallazgos |
-| `pedidos360-frontend` | 23 pruebas, 0 fallos; TypeScript, Vite build y bundle Nginx correctos |
-| Total automatizado | **110 pruebas, 0 fallos** |
+| `pedidos360-frontend` | 58 pruebas, 0 fallos; TypeScript, Vite build y bundle Nginx correctos |
+| Total automatizado | **145 pruebas, 0 fallos** |
 
 Comandos principales:
 
@@ -75,14 +75,14 @@ Durante esta revisión también se detectó y corrigió una incompatibilidad rea
 | Build parametrizable de React + Vite | Compila con IDs y URL de API sustituidos; imagen Nginx construida desde `dist/` |
 | Docker/Oracle | Stack integrado `healthy`: Oracle, catalog, orders, BFF y frontend; principals separados para catalog/orders |
 | Redirect URI SPA | Build Docker verificado con `http://localhost:4200/login`; el bundle no contiene `app.example.com` |
-| Callbacks de identidad | Entra procesa `/login`; Cognito procesa `/auth/cognito/callback`; 23 pruebas frontend aprobadas |
+| Callbacks de identidad | Entra procesa `/login`; Cognito procesa `/auth/cognito/callback`; 58 pruebas frontend aprobadas |
 | Compatibilidad JWT local | Validadores Backend aceptan v1/v2 exactos para el mismo tenant y API; token real debe comprobarse después del rebuild |
 
 ## Integración Cognito añadida
 
 La rama `feature/cognito-aws` agrega el segundo proveedor sin cambiar el namespace de Entra:
 
-- frontend React con login Cognito Authorization Code + PKCE S256, callback separado `/auth/cognito/callback` y 23 pruebas frontend;
+- frontend React con login Cognito Authorization Code + PKCE S256, callback separado `/auth/cognito/callback` y 58 pruebas frontend;
 - BFF, Catalog y Orders con cadenas/validadores separados para Entra `/api/**` y Cognito `/aws/api/**`;
 - validadores de issuer, audience/client ID, `token_use=access` y grupos `cognito:groups`;
 - Terraform con dos authorizers, rutas duplicadas y repositorios ECR;
