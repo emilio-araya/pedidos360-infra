@@ -1,6 +1,24 @@
 name: pedidos360
 
 services:
+  wiremock:
+    image: wiremock/wiremock:3.3.1
+    ports:
+      - "127.0.0.1:8089:8080"
+    volumes:
+      - ./wiremock/mappings:/home/wiremock/mappings:ro
+      - ./wiremock/__files:/home/wiremock/__files:ro
+    command: ["--global-response-templating", "--verbose"]
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/__admin/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
   oracle:
     image: gvenzl/oracle-free:23-slim-faststart
     environment:

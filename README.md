@@ -24,6 +24,8 @@ Clona los cinco repositorios con esos nombres. No se versionan credenciales, `.e
 
 ## Configuración local
 
+### Opción 1: Stack completo con Oracle (recomendado para desarrollo real)
+
 ```bash
 cp .env.example .env
 chmod +x scripts/*.sh
@@ -31,6 +33,16 @@ chmod +x scripts/*.sh
 ```
 
 El Compose construye los cuatro componentes desde sus repositorios hermanos. Solo frontend y BFF publican puertos locales; Catalog, Orders y Oracle permanecen en redes privadas.
+
+### Opción 2: Stack con WireMock (desarrollo rápido sin Oracle)
+
+```bash
+cp .env.example .env
+chmod +x scripts/*.sh
+./scripts/start-with-wiremock.sh
+```
+
+Esta opción usa WireMock como Identity Provider simulado en lugar de HMAC. Es más segura y simula mejor el flujo real de autenticación. Ver [`wiremock/README.md`](./wiremock/README.md) para más detalles.
 
 Para detener conservando los datos:
 

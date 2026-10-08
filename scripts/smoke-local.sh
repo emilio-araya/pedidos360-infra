@@ -83,6 +83,14 @@ expect_status 401 "$status" 'Petición sin token'
 status=$(curl -sS -o "$RUN_DIR/no-token-aws.json" -w '%{http_code}' 'http://127.0.0.1:8080/aws/api/orders')
 expect_status 401 "$status" 'Petición AWS sin token'
 
+status=$(curl -sS -o "$RUN_DIR/invalid-token.json" -w '%{http_code}' \
+  -H "Authorization: Bearer invalid-token-12345" 'http://127.0.0.1:8080/api/orders')
+expect_status 401 "$status" 'Petición con token inválido'
+
+status=$(curl -sS -o "$RUN_DIR/expired-token.json" -w '%{http_code}' \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0IiwiZXhwIjoxfQ.invalid" 'http://127.0.0.1:8080/api/orders')
+expect_status 401 "$status" 'Petición con token expirado'
+
 status=$(curl -sS -o "$RUN_DIR/client-products.json" -w '%{http_code}' \
   -H "Authorization: Bearer $CLIENT_TOKEN" 'http://127.0.0.1:8080/api/catalog/products')
 expect_status 200 "$status" 'Cliente consulta catálogo'

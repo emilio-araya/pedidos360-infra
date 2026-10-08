@@ -1,0 +1,12 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/authorize"
+  },
+  "response": {
+    "status": 302,
+    "headers": {
+      "Location": "http://localhost:4200/login?code=mock-auth-code&state=mock-state"
+    }
+  }
+}
