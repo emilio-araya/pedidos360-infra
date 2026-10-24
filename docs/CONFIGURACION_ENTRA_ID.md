@@ -326,3 +326,22 @@ Las transiciones inválidas deben ser rechazadas. En particular, no se puede des
 6. Comprobar que un `Cliente` no ve navegación administrativa, pero sí puede llegar a productos para crear su pedido.
 
 Nunca registrar en evidencias el token, secretos de base de datos ni secretos de Entra.
+
+## Estado actual y pendiente de coordinación (2026-10-23)
+
+Los roles de aplicación ya se documentan arriba bajo `pedidos360-api`. Estado verificado en el código:
+
+- El frontend pide `api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user` y lee `roles` de ese access token.
+- El BFF y `pedidos360-orders` leen el mismo claim `roles` y esperan `Admin`, `Operador` o `Cliente`.
+- `OrderAuthorizationService.requireKnownRole` responde `403 El token no contiene un rol de Pedidos360` cuando el token no trae ninguno. Es decir: **sin asignación no hay acceso**, aunque la cuenta exista en el tenant.
+
+### Pendiente de decidir con el equipo
+
+1. Qué cuentas reciben `Admin`, `Operador` y `Cliente`. La propuesta a coordinar es: la cuenta del responsable del proyecto como `Admin`, `Be.serrano@duocuc.cl` como `Operador`, y el resto como `Cliente`.
+2. Cómo se asigna `Cliente` a "cualquier otro correo":
+   - Grupo dinámico "Todos los usuarios" (`user.objectId -ne null`) asignado al app role `Cliente`. Requiere Entra ID P1 y no toca código.
+   - Asignación manual por cuenta, sin costo adicional pero con trabajo operativo.
+   - Cambiar `requireKnownRole` para tratar la ausencia de rol como `Cliente`. Es la única opción que modifica el código y relaja un control de seguridad; requiere decisión explícita.
+3. Invitar como guest a las cuentas externas al tenant (por ejemplo `@duocuc.cl`) antes de asignarles un rol.
+
+Los roles deben definirse en la app registration de la **API** (`pedidos360-api`), no en la SPA: el ID token de la SPA no es el token que valida el backend.
