@@ -62,6 +62,7 @@ docker compose --env-file .env -f docker-compose.yml down --volumes
 - El workflow de despliegue AWS se ejecuta manualmente y usa GitHub OIDC; no requiere almacenar AWS access keys en el repositorio.
 - Cada repositorio de aplicación tiene `publish-ecr.yml` para publicar su imagen en ECR con el mismo rol OIDC; Terraform crea los cuatro repositorios con cifrado y scan-on-push.
 - La configuración de Cognito, callbacks, PKCE y grupos está en `docs/CONFIGURACION_COGNITO.md`.
+- La mensajería con RabbitMQ (outbox, contrato de eventos, reintentos y DLQ) está en `docs/MENSAJERIA_RABBITMQ.md`.
 
 ## AWS
 
