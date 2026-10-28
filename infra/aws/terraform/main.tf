@@ -9,6 +9,10 @@
 # Separación de authorizers:
 #   /api/**    -> solo Microsoft Entra ID
 #   /aws/api/** -> solo Amazon Cognito
+#
+# Excepcion explicita: local.public_route_keys (compra como invitado y
+# lecturas del catalogo bajo /api) no usa authorizer. Ver
+# docs/COMPRA_INVITADO.md.
 # ---------------------------------------------------------------------------
 
 provider "aws" {
@@ -131,6 +135,13 @@ check "cors_origin_configured" {
   }
 }
 
+check "public_throttling_targets_public_routes" {
+  assert {
+    condition     = alltrue([for key in keys(local.public_route_throttling) : contains(local.public_route_keys, key)])
+    error_message = "Cada limite de throttling publico debe apuntar a una ruta de local.public_route_keys."
+  }
+}
+
 check "private_backend_only" {
   assert {
     condition     = !contains(local.allowed_origins, "*")
@@ -154,11 +165,41 @@ locals {
     "/catalog/products/{id}/stock" = ["PATCH"]
   }
 
-  entra_route_keys = toset(flatten([
+  # Rutas publicas, sin authorizer: compra como invitado y lecturas del
+  # catalogo. El BFF ya las atiende sin token; la autorizacion de las rutas de
+  # invitado es el token secreto de seguimiento, que orders valida contra su
+  # hash. Se enumeran completas, igual que route_methods.
+  public_route_keys = toset([
+    "GET /api/catalog/products",
+    "GET /api/catalog/products/{id}",
+    "POST /api/guest-orders",
+    "GET /api/guest-orders/{token}",
+    "POST /api/guest-orders/{token}/cancel",
+    "POST /api/guest-orders/link-requests",
+  ])
+
+  # Limites por ruta para los POST publicos que crean trabajo (un pedido o un
+  # correo). En HTTP API el throttling por ruta es un cupo compartido por todos
+  # los clientes de esa ruta, no un limite por IP: protege al backend y al
+  # SMTP, pero un solo cliente abusivo puede agotar el cupo para los demas.
+  public_route_throttling = {
+    "POST /api/guest-orders" = {
+      burst_limit = 5
+      rate_limit  = 1
+    }
+    "POST /api/guest-orders/link-requests" = {
+      burst_limit = 5
+      rate_limit  = 1
+    }
+  }
+
+  # Las lecturas publicas del catalogo se quitan del set de Entra para que
+  # ninguna route key quede duplicada entre recursos.
+  entra_route_keys = setsubtract(toset(flatten([
     for path, methods in local.route_methods : [
       for method in methods : "${method} /api${path}"
     ]
-  ]))
+  ])), local.public_route_keys)
 
   cognito_route_keys = toset(flatten([
     for path, methods in local.route_methods : [
@@ -188,6 +229,29 @@ resource "aws_apigatewayv2_route" "cognito" {
   authorization_scopes = var.cognito_authorization_scopes
 }
 
+resource "aws_apigatewayv2_route" "public" {
+  for_each = local.public_route_keys
+
+  api_id             = aws_apigatewayv2_api.pedidos360.id
+  route_key          = each.value
+  target             = "integrations/${aws_apigatewayv2_integration.bff.id}"
+  authorization_type = "NONE"
+}
+
+# Las lecturas del catalogo ya existian como rutas de Entra. Moverlas en el
+# estado convierte el cambio en una actualizacion en sitio (JWT -> NONE) y
+# evita que API Gateway rechace la creacion por una route key duplicada
+# mientras la ruta anterior todavia no se destruye.
+moved {
+  from = aws_apigatewayv2_route.entra["GET /api/catalog/products"]
+  to   = aws_apigatewayv2_route.public["GET /api/catalog/products"]
+}
+
+moved {
+  from = aws_apigatewayv2_route.entra["GET /api/catalog/products/{id}"]
+  to   = aws_apigatewayv2_route.public["GET /api/catalog/products/{id}"]
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.pedidos360.id
   name        = "$default"
@@ -215,12 +279,26 @@ resource "aws_apigatewayv2_stage" "default" {
   depends_on = [
     aws_apigatewayv2_route.entra,
     aws_apigatewayv2_route.cognito,
+    aws_apigatewayv2_route.public,
   ]
 
   default_route_settings {
     detailed_metrics_enabled = true
     throttling_burst_limit   = 100
     throttling_rate_limit    = 50
+  }
+
+  # route_settings reemplaza los valores por defecto solo para esas rutas.
+  # El limite es por ruta y global (todos los clientes), no por IP.
+  dynamic "route_settings" {
+    for_each = local.public_route_throttling
+
+    content {
+      route_key                = route_settings.key
+      detailed_metrics_enabled = true
+      throttling_burst_limit   = route_settings.value.burst_limit
+      throttling_rate_limit    = route_settings.value.rate_limit
+    }
   }
 
   tags = {

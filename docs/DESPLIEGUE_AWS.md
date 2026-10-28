@@ -124,8 +124,9 @@ El compose local usa una instancia Oracle Free de desarrollo y un volumen local;
 La configuración crea:
 
 - HTTP API en HTTPS, con CORS para orígenes exactos (el dominio de CloudFront se agrega automáticamente);
-- authorizer JWT de Entra para `/api/**`;
+- authorizer JWT de Entra para `/api/**`, salvo las rutas públicas;
 - authorizer JWT de Cognito para `/aws/api/**`, con requirement de scope `openid`;
+- rutas públicas sin authorizer para la compra como invitado (`/api/guest-orders/**`) y las lecturas `GET /api/catalog/products` y `GET /api/catalog/products/{id}`, con throttling propio en los dos `POST` públicos (ver `docs/COMPRA_INVITADO.md`);
 - VPC Link en las subredes privadas de aplicación;
 - integración privada `HTTP_PROXY` hacia el ALB interno;
 - rutas explícitas `/api/orders/*`, `/api/catalog/*` y sus equivalentes `/aws/api/*`;

@@ -168,6 +168,7 @@ React consume solamente estas rutas públicas del BFF:
 - `GET/POST /api/catalog/products` y sus equivalentes Cognito.
 - `GET/PUT/DELETE /api/catalog/products/{id}` y sus equivalentes Cognito.
 - `PATCH /api/catalog/products/{id}/stock` y su equivalente Cognito.
+- Compra como invitado, sin Bearer: `POST /api/guest-orders`, `GET /api/guest-orders/{token}`, `POST /api/guest-orders/{token}/cancel` y `POST /api/guest-orders/link-requests` (ver `docs/COMPRA_INVITADO.md`).
 
 El cliente agrega el Bearer y convierte errores HTTP en `ApiError`. Los identificadores se codifican con `encodeURIComponent`. No se consumen endpoints internos de reservations ni URLs privadas de microservicios.
 
