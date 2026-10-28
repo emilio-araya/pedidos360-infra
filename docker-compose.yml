@@ -47,6 +47,30 @@ services:
       - backend
     restart: unless-stopped
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-pedidos360}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    # El management UI se publica solo en loopback: nunca en una interfaz pública.
+    # Docker no publica puertos de un contenedor atado solo a redes `internal: true`,
+    # por eso el broker va también en `egress`, que es una bridge normal.
+    ports:
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    networks:
+      - backend
+      - egress
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
   catalog:
     build:
       context: ../pedidos360-catalog
@@ -63,10 +87,17 @@ services:
       ORACLE_URL: jdbc:oracle:thin:@//oracle:1521/${ORACLE_DATABASE:-FREEPDB1}
       ORACLE_USERNAME: ${CATALOG_DB_USERNAME:?Define CATALOG_DB_USERNAME en .env}
       ORACLE_PASSWORD: ${CATALOG_DB_PASSWORD:?Define CATALOG_DB_PASSWORD en .env}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-pedidos360}
     expose:
       - "8082"
     depends_on:
       oracle:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - backend
@@ -96,12 +127,19 @@ services:
       ORDERS_DB_USERNAME: ${ORDERS_DB_USERNAME:?Define ORDERS_DB_USERNAME en .env}
       ORDERS_DB_PASSWORD: ${ORDERS_DB_PASSWORD:?Define ORDERS_DB_PASSWORD en .env}
       CATALOG_SERVICE_URL: http://catalog:8082
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-pedidos360}
     expose:
       - "8081"
     depends_on:
       oracle:
         condition: service_healthy
       catalog:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - backend
@@ -193,3 +231,5 @@ networks:
 volumes:
   oracle-data:
     name: ${COMPOSE_PROJECT_NAME:-pedidos360}_oracle-data
+  rabbitmq-data:
+    name: ${COMPOSE_PROJECT_NAME:-pedidos360}_rabbitmq-data
