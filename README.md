@@ -34,6 +34,8 @@ chmod +x scripts/*.sh
 
 El Compose construye los cuatro componentes desde sus repositorios hermanos. Solo frontend y BFF publican puertos locales; Catalog, Orders y Oracle permanecen en redes privadas.
 
+El Compose también levanta Mailpit para los correos de la compra como invitado. Su SMTP (`1025`) solo es accesible dentro de Docker; los correos enviados se ven en `http://127.0.0.1:8025`. Las variables `MAIL_*` y `FRONTEND_PUBLIC_URL` tienen valores locales por defecto; el detalle y la configuración con Amazon SES están en [`docs/COMPRA_INVITADO.md`](./docs/COMPRA_INVITADO.md).
+
 ### Opción 2: Stack con WireMock (desarrollo rápido sin Oracle)
 
 ```bash
@@ -63,6 +65,7 @@ docker compose --env-file .env -f docker-compose.yml down --volumes
 - Cada repositorio de aplicación tiene `publish-ecr.yml` para publicar su imagen en ECR con el mismo rol OIDC; Terraform crea los cuatro repositorios con cifrado y scan-on-push.
 - La configuración de Cognito, callbacks, PKCE y grupos está en `docs/CONFIGURACION_COGNITO.md`.
 - La mensajería con RabbitMQ (outbox, contrato de eventos, reintentos y DLQ) está en `docs/MENSAJERIA_RABBITMQ.md`.
+- La compra como invitado (enlace secreto, correo con Mailpit o SES, rutas públicas y throttling) está en `docs/COMPRA_INVITADO.md`.
 
 ## AWS
 
@@ -87,6 +90,8 @@ La capa de red y la puerta de entrada **están aplicadas y verificadas** en una 
 | RDS Oracle | pendiente | requiere una decisión de licencia antes de crearlo |
 
 La verificación ejecutada sobre lo aplicado cubrió: `/api/**` y `/aws/api/**` sin token devuelven `401`; rutas fuera del contrato y operaciones internas devuelven `404`; el ALB no responde desde Internet. El contrato público está en `infra/aws/openapi.yaml` y el procedimiento de despliegue por fases en `docs/DESPLIEGUE_AWS.md`.
+
+Pendiente de aplicar: la compra como invitado agrega seis rutas sin authorizer (las lecturas del catálogo bajo `/api` y las cuatro de `/api/guest-orders`), con throttling propio en los dos `POST` públicos. El resto de `/api/**` y `/aws/api/**` sigue exigiendo token. Ver `docs/COMPRA_INVITADO.md`.
 
 ## Base de datos
 

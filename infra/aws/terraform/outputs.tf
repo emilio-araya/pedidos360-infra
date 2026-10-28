@@ -56,9 +56,14 @@ output "cognito_route_keys" {
   value       = sort(tolist(local.cognito_route_keys))
 }
 
+output "public_route_keys" {
+  description = "Rutas bajo /api sin authorizer (compra como invitado y lecturas del catálogo)."
+  value       = sort(tolist(local.public_route_keys))
+}
+
 output "route_keys" {
-  description = "Rutas públicas de ambos proveedores."
-  value       = sort(concat(tolist(local.entra_route_keys), tolist(local.cognito_route_keys)))
+  description = "Todas las rutas del gateway: Entra, Cognito y públicas sin authorizer."
+  value       = sort(concat(tolist(local.entra_route_keys), tolist(local.cognito_route_keys), tolist(local.public_route_keys)))
 }
 
 output "ecr_repository_urls" {

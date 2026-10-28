@@ -71,6 +71,34 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # SMTP local para los correos de compra como invitado (voucher y reenvío de
+  # enlace). Atrapa todos los mensajes: nunca entrega a buzones reales.
+  # - SMTP 1025: solo en la red `backend`, sin puerto publicado en el host.
+  # - UI web 8025: publicada solo en loopback. Igual que RabbitMQ, necesita la
+  #   red `egress` porque Docker no publica puertos de contenedores atados solo
+  #   a redes `internal: true`.
+  mailpit:
+    image: axllent/mailpit:v1.32.0
+    environment:
+      # Acepta cualquier usuario/clave sin TLS solo si alguien define
+      # MAIL_USERNAME en local; con las variables vacías no hay autenticación.
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    expose:
+      - "1025"
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+    networks:
+      - backend
+      - egress
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped
+
   catalog:
     build:
       context: ../pedidos360-catalog
@@ -132,6 +160,14 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-pedidos360}
+      # Correo del voucher (compra como invitado). En local apunta a Mailpit;
+      # en AWS las mismas variables apuntan al SMTP de Amazon SES.
+      MAIL_HOST: ${MAIL_HOST:-mailpit}
+      MAIL_PORT: ${MAIL_PORT:-1025}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-no-reply@pedidos360.local}
+      FRONTEND_PUBLIC_URL: ${FRONTEND_PUBLIC_URL:-http://localhost:4200}
     expose:
       - "8081"
     depends_on:
@@ -140,6 +176,8 @@ services:
       catalog:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     networks:
       - backend
