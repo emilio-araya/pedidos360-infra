@@ -75,29 +75,34 @@ docker compose --env-file .env -f docker-compose.yml down --volumes
 
 ## AWS
 
-La capa de API Gateway está en `infra/aws/terraform`. BFF, Catalog, Orders y Oracle se despliegan en una VPC privada; API Gateway es la única entrada pública del backend.
+La capa de API Gateway está en `infra/aws/terraform`. El diseño despliega BFF, Catalog, Orders y Oracle en una VPC privada, con API Gateway como única entrada pública del backend. El estado real está abajo.
 
 ### Estado del despliegue
 
-La capa de red y la puerta de entrada **están aplicadas y verificadas** en una cuenta de laboratorio. El runtime y la base de datos están escritos y validados, pero su aplicación quedó bloqueada.
+Estado verificado el 2026-10-28 en la cuenta del AWS Academy Learner Lab (`us-east-1`), con consultas de solo lectura (`aws ... describe/get/list`).
+
+**Lo que funciona hoy:** el backend corre en una instancia EC2 (`pedidos360-backend`) con Docker Compose, levantada **fuera de Terraform**. Es la que se usa para la demo.
+
+**Lo que creó Terraform:** un `apply` anterior quedó a medias, por los límites del laboratorio:
 
 | Componente | Estado | Detalle |
 |---|---|---|
-| VPC `10.20.0.0/16` | aplicado | 4 subredes en 2 AZ, subredes de aplicación sin IP pública |
-| Security groups | aplicado | 6 grupos, tráfico entre capas restringido |
-| NAT gateway | aplicado | salida a internet desde subredes privadas |
-| ALB interno | aplicado | única entrada al BFF, sin exposición a Internet |
-| VPC Link | aplicado | enlace privado hacia el ALB |
-| API Gateway | aplicado | 2 authorizers (Entra y Cognito), 24 rutas, stage `$default` |
-| Bootstrap de Terraform | aplicado | bucket de estado, lock en DynamoDB, OIDC de GitHub, rol de despliegue |
-| ECS Fargate | bloqueado | el rol del laboratorio no tiene permisos y la organización aplica una SCP que lo impide |
-| Secrets Manager | bloqueado | mismo bloqueo de permisos |
-| CloudFront + S3 | bloqueado | depende de que la API esté viva primero (desacople de CORS) |
-| RDS Oracle | pendiente | requiere una decisión de licencia antes de crearlo |
+| VPC `10.20.0.0/16` | existe | 4 subredes en 2 AZ, tablas de rutas e internet gateway |
+| Security groups | existen | 6 grupos de la aplicación |
+| API Gateway | existe | 2 authorizers (Entra y Cognito), 24 rutas con JWT, stage `$default`; versión anterior a la compra como invitado |
+| VPC Link y target group | existen | sin balanceador detrás: el API rechaza sin token (`401`), pero no tiene backend al que enviar las peticiones válidas |
+| Bucket del frontend | existe | vacío |
+| NAT gateway | no existe | quedó su IP elástica sin asociar |
+| ALB interno | no existe | — |
+| Bootstrap (bucket de estado, DynamoDB, OIDC) | no existe | no hay estado remoto en esta cuenta |
+| ECS Fargate | bloqueado | el laboratorio niega `iam:CreateRole`; solo permite pasar el `LabRole` existente |
+| CloudFront, RDS, Cloud Map | bloqueados | la simulación de permisos los niega (puede haber excepciones condicionales) |
 
-La verificación ejecutada sobre lo aplicado cubrió: `/api/**` y `/aws/api/**` sin token devuelven `401`; rutas fuera del contrato y operaciones internas devuelven `404`; el ALB no responde desde Internet. El contrato público está en `infra/aws/openapi.yaml` y el procedimiento de despliegue por fases en `docs/DESPLIEGUE_AWS.md`.
+El estado de Terraform de esta cuenta no se conserva, así que lo creado quedó **sin administrar**: un `terraform apply` desde cero intentaría crear todo de nuevo. Desplegar el Terraform completo requiere una cuenta AWS que permita crear roles IAM, o adaptarlo para usar el `LabRole`.
 
-Pendiente de aplicar: la compra como invitado agrega seis rutas sin authorizer (las lecturas del catálogo bajo `/api` y las cuatro de `/api/guest-orders`), con throttling propio en los dos `POST` públicos. El resto de `/api/**` y `/aws/api/**` sigue exigiendo token. Ver `docs/COMPRA_INVITADO.md`.
+El contrato público está en `infra/aws/openapi.yaml` y el procedimiento de despliegue por fases en `docs/DESPLIEGUE_AWS.md`.
+
+La compra como invitado agrega seis rutas sin authorizer (las lecturas del catálogo bajo `/api` y las cuatro de `/api/guest-orders`), con throttling propio en los dos `POST` públicos. Están escritas y validadas (`terraform validate`), pero no aplicadas, por el mismo bloqueo. Ver `docs/COMPRA_INVITADO.md`.
 
 ## Base de datos
 
