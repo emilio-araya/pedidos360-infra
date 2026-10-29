@@ -103,27 +103,50 @@ RABBITMQ_USERNAME=pedidos360
 RABBITMQ_PASSWORD=<una clave larga>
 RABBITMQ_VHOST=pedidos360
 RABBITMQ_MANAGEMENT_PORT=15672
+RABBITMQ_2_MANAGEMENT_PORT=15673
+RABBITMQ_ERLANG_COOKIE=<una cadena larga y aleatoria, igual en los dos nodos>
+MESSAGING_ADMIN_PORT=8085
 ```
 
-`docker-compose.yml` las exige con `:?` y se las pasa a `rabbitmq`, `catalog` y `orders`. Opcionales en `orders`: `OUTBOX_PUBLISHER_ENABLED` (por defecto `true`), `OUTBOX_PUBLISHER_DELAY_MS` (`2000`), `OUTBOX_CONFIRM_TIMEOUT_MS` (`5000`).
+`docker-compose.yml` las exige con `:?` y se las pasa a `rabbitmq-1`, `rabbitmq-2`, `catalog`, `orders` y `messaging-admin`. Opcionales en `orders`: `OUTBOX_PUBLISHER_ENABLED` (por defecto `true`), `OUTBOX_PUBLISHER_DELAY_MS` (`2000`), `OUTBOX_CONFIRM_TIMEOUT_MS` (`5000`).
 
-> `RABBITMQ_DEFAULT_USER`/`PASS` sólo se aplican cuando el volumen `pedidos360_rabbitmq-data` está vacío. Cambiar las credenciales en `.env` después del primer arranque **no** cambia el usuario del broker: hay que cambiarlo con `rabbitmqctl` o recrear el volumen.
+> `RABBITMQ_DEFAULT_USER`/`PASS` sólo se aplican cuando los volúmenes `pedidos360_rabbitmq-1-data` y `pedidos360_rabbitmq-2-data` están vacíos. Cambiar las credenciales en `.env` después del primer arranque **no** cambia el usuario del broker: hay que cambiarlo con `rabbitmqctl` o recrear el volumen.
 
 ## Ejecución local
 
 ```bash
-docker compose up -d rabbitmq      # sólo el broker
-docker compose up -d               # todo el stack
+docker compose up -d rabbitmq-1 rabbitmq-2   # sólo el clúster
+docker compose up -d                         # todo el stack
 ```
 
 Con el perfil `local` de cada servicio (`mvn spring-boot:run`), la conexión usa `RABBITMQ_HOST`/`PORT`/`USERNAME`/`PASSWORD`/`VHOST`; sin broker, la API HTTP funciona, `/actuator/health` informa `DOWN` y los eventos esperan en la outbox.
 
 `mvn test` **no** necesita broker: `src/test/resources/application.properties` desactiva conexión, declaración de topología, listeners y publicador.
 
+## Clúster de dos nodos
+
+`rabbitmq-1` y `rabbitmq-2` forman un clúster al arrancar (`rabbitmq/rabbitmq.conf`):
+
+- **Descubrimiento `classic_config`**: cada nodo conoce al otro por nombre (`rabbit@rabbitmq-1`, `rabbit@rabbitmq-2`). El nombre sale del `hostname` del contenedor, por eso está fijado en el compose.
+- **Erlang cookie compartida** (`RABBITMQ_ERLANG_COOKIE`): es el secreto que autoriza a un nodo a unirse. Debe ser igual en ambos y no se versiona.
+- **Particiones con `autoheal`**: con dos nodos no hay mayoría posible. `pause_minority` pausaría también al nodo que sobrevive; se probó y el clúster quedaba sin nodos activos. `autoheal` mantiene vivo al nodo restante y, tras un corte de red, reinicia el lado con menos clientes.
+- **Clientes con las dos direcciones** (`SPRING_RABBITMQ_ADDRESSES=rabbitmq-1:5672,rabbitmq-2:5672`): si un nodo cae, Spring se reconecta al otro y vuelve a declarar su topología.
+- **Replicación**: las colas del sistema son `classic` y viven en un nodo. Las colas `QUORUM` creadas con el administrador se replican en los dos (`members: [rabbit@rabbitmq-1, rabbit@rabbitmq-2]`). Una cola quorum **necesita mayoría para crearse**: con un nodo caído, el administrador responde `503` y no deja restos.
+
+```bash
+docker compose exec rabbitmq-1 rabbitmqctl cluster_status        # Running Nodes: los dos
+docker compose exec rabbitmq-1 rabbitmqctl list_queues -p pedidos360 name type members
+```
+
+## Microservicio administrador
+
+`messaging-admin/` expone una API REST para crear, consultar y eliminar colas, exchanges y bindings sin entrar a la consola de RabbitMQ. Ver [`messaging-admin/README.md`](../messaging-admin/README.md). Nunca toca los nombres del sistema (`stock.`, `orders.`, `pedidos360.`), así que no puede romper el procesamiento de pedidos.
+
 ## Seguridad
 
 - AMQP (5672) no se publica al host: sólo es accesible dentro de la red de Docker.
-- El management UI (15672) se publica sólo en `127.0.0.1`. Como Docker no publica puertos de un contenedor atado únicamente a redes `internal: true`, el broker está también en `egress`.
+- La API del administrador (8085) se publica sólo en `127.0.0.1`: puede eliminar colas y no tiene autenticación propia.
+- El management UI (15672 y 15673) se publica sólo en `127.0.0.1`. Como Docker no publica puertos de un contenedor atado únicamente a redes `internal: true`, el broker está también en `egress`.
 - Credenciales sólo por `.env`. TLS desactivado: el tráfico AMQP no sale de la red interna de Docker.
 
 ## Verificación realizada
@@ -141,6 +164,17 @@ RabbitMQ 3.13 real, con `orders` y `catalog` levantados con el perfil `local` (H
 | Resultado para un pedido inexistente | `orders.stock-result.dlq` |
 | Aceptar y cancelar enseguida, 6 veces | Sin stock inmovilizado; 6 reservas huérfanas detectadas y liberadas |
 | Colas principales al terminar | Vacías |
+
+Clúster y administrador (2026-10-28, proyecto de compose aislado, `orders`, `catalog` y `messaging-admin` conectados a los dos nodos):
+
+| Escenario | Resultado |
+|---|---|
+| Arranque desde cero | `Running Nodes: rabbit@rabbitmq-1, rabbit@rabbitmq-2` |
+| Servicios contra el clúster | Arrancan sin errores AMQP; tras borrar los volúmenes se reconectan y redeclaran sus 15 colas |
+| Cola `QUORUM` creada por el administrador | Réplicas en los dos nodos |
+| Nodo 1 detenido | Nodo 2 sigue activo; el administrador lee colas por el nodo 2 (`200`) y crea colas `classic` (`201`) |
+| Cola `QUORUM` con un nodo caído | `503` con mensaje claro, sin cola ni DLQ a medias |
+| Nodo 1 vuelve | Se reintegra solo al clúster |
 
 No se verificó: el camino de reintento transitorio contra el broker real (cubierto por tests unitarios), ni el despliegue en EC2.
 

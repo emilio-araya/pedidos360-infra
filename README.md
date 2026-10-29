@@ -22,6 +22,12 @@ Pedidos360-repos/
 
 Clona los cinco repositorios con esos nombres. No se versionan credenciales, `.env` ni el volumen de Oracle.
 
+## Mensajería
+
+- RabbitMQ corre como **clúster de dos nodos** (`rabbitmq-1`, `rabbitmq-2`): ver [`docs/MENSAJERIA_RABBITMQ.md`](docs/MENSAJERIA_RABBITMQ.md).
+- [`messaging-admin/`](messaging-admin/README.md) es el microservicio que administra colas, exchanges y bindings por API REST.
+- Guion de demostración con los comandos de cada punto: [`docs/DEMO_RABBITMQ.md`](docs/DEMO_RABBITMQ.md).
+
 ## Configuración local
 
 ### Opción 1: Stack completo con Oracle (recomendado para desarrollo real)
