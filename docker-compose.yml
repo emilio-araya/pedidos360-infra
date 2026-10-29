@@ -47,19 +47,53 @@ services:
       - backend
     restart: unless-stopped
 
-  rabbitmq:
+  rabbitmq-1:
     image: rabbitmq:3.13-management-alpine
+    # The node name is rabbit@<hostname>: it must match rabbitmq.conf.
+    hostname: rabbitmq-1
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
       RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-pedidos360}
+      # Shared secret that lets both nodes join the same cluster.
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:?Define RABBITMQ_ERLANG_COOKIE en .env}
     volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
-    # El management UI se publica solo en loopback: nunca en una interfaz pública.
-    # Docker no publica puertos de un contenedor atado solo a redes `internal: true`,
-    # por eso el broker va también en `egress`, que es una bridge normal.
+      - rabbitmq-1-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-cluster.conf:ro
+    # The management UI is published on loopback only, never on a public interface.
+    # Docker does not publish ports of a container attached only to `internal: true`
+    # networks, so the broker also joins `egress`, a regular bridge.
     ports:
       - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    networks:
+      - backend
+      - egress
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  rabbitmq-2:
+    image: rabbitmq:3.13-management-alpine
+    # The node name is rabbit@<hostname>: it must match rabbitmq.conf.
+    hostname: rabbitmq-2
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-pedidos360}
+      # Shared secret that lets both nodes join the same cluster.
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE:?Define RABBITMQ_ERLANG_COOKIE en .env}
+    volumes:
+      - rabbitmq-2-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-cluster.conf:ro
+    # The management UI is published on loopback only, never on a public interface.
+    # Docker does not publish ports of a container attached only to `internal: true`
+    # networks, so the broker also joins `egress`, a regular bridge.
+    ports:
+      - "127.0.0.1:${RABBITMQ_2_MANAGEMENT_PORT:-15673}:15672"
     networks:
       - backend
       - egress
@@ -115,8 +149,9 @@ services:
       ORACLE_URL: jdbc:oracle:thin:@//oracle:1521/${ORACLE_DATABASE:-FREEPDB1}
       ORACLE_USERNAME: ${CATALOG_DB_USERNAME:?Define CATALOG_DB_USERNAME en .env}
       ORACLE_PASSWORD: ${CATALOG_DB_PASSWORD:?Define CATALOG_DB_PASSWORD en .env}
-      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_HOST: rabbitmq-1
       RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_ADDRESSES: rabbitmq-1:5672,rabbitmq-2:5672
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-pedidos360}
@@ -125,7 +160,9 @@ services:
     depends_on:
       oracle:
         condition: service_healthy
-      rabbitmq:
+      rabbitmq-1:
+        condition: service_healthy
+      rabbitmq-2:
         condition: service_healthy
     networks:
       - backend
@@ -155,8 +192,9 @@ services:
       ORDERS_DB_USERNAME: ${ORDERS_DB_USERNAME:?Define ORDERS_DB_USERNAME en .env}
       ORDERS_DB_PASSWORD: ${ORDERS_DB_PASSWORD:?Define ORDERS_DB_PASSWORD en .env}
       CATALOG_SERVICE_URL: http://catalog:8082
-      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_HOST: rabbitmq-1
       RABBITMQ_PORT: "5672"
+      SPRING_RABBITMQ_ADDRESSES: rabbitmq-1:5672,rabbitmq-2:5672
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-pedidos360}
@@ -175,7 +213,9 @@ services:
         condition: service_healthy
       catalog:
         condition: service_healthy
-      rabbitmq:
+      rabbitmq-1:
+        condition: service_healthy
+      rabbitmq-2:
         condition: service_healthy
       mailpit:
         condition: service_healthy
@@ -260,6 +300,27 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  messaging-admin:
+    build:
+      context: ./messaging-admin
+    environment:
+      RABBITMQ_ADDRESSES: rabbitmq-1:5672,rabbitmq-2:5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-pedidos360}
+    # The admin API can delete queues: loopback only, never a public interface.
+    ports:
+      - "127.0.0.1:${MESSAGING_ADMIN_PORT:-8085}:8085"
+    depends_on:
+      rabbitmq-1:
+        condition: service_healthy
+      rabbitmq-2:
+        condition: service_healthy
+    networks:
+      - backend
+      - egress
+    restart: unless-stopped
+
 networks:
   backend:
     internal: true
@@ -269,5 +330,7 @@ networks:
 volumes:
   oracle-data:
     name: ${COMPOSE_PROJECT_NAME:-pedidos360}_oracle-data
-  rabbitmq-data:
-    name: ${COMPOSE_PROJECT_NAME:-pedidos360}_rabbitmq-data
+  rabbitmq-1-data:
+    name: ${COMPOSE_PROJECT_NAME:-pedidos360}_rabbitmq-1-data
+  rabbitmq-2-data:
+    name: ${COMPOSE_PROJECT_NAME:-pedidos360}_rabbitmq-2-data
