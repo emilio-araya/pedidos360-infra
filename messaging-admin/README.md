@@ -31,7 +31,7 @@ Ruta base: `/api/admin`. Errores: `400` entrada inválida, `404` cola inexistent
 
 Valores por defecto de una cola nueva: durable, `classic` y con una cola de
 mensajes muertos `<nombre>.dlq` enlazada al exchange directo
-`pedidos360-admin.dlx`. Las colas `QUORUM` se replican en los dos nodos del
+`pedidos360.admin.dlx`. Las colas `QUORUM` se replican en los dos nodos del
 clúster y deben ser durables.
 
 ### Validación

@@ -13,8 +13,10 @@ Muestra `Running Nodes: rabbit@rabbitmq-1, rabbit@rabbitmq-2`. Configuración en
 `rabbitmq/rabbitmq.conf` (descubrimiento `classic_config`, particiones `autoheal`)
 y Erlang cookie compartida en `RABBITMQ_ERLANG_COOKIE`.
 
-Prueba de falla: `docker compose stop rabbitmq-1`; el nodo 2 sigue activo y el
-administrador sigue respondiendo. `docker compose start rabbitmq-1` lo reintegra.
+Prueba de falla: `docker compose stop rabbitmq-1`; el nodo 2 sigue activo, el
+administrador sigue respondiendo y las colas `QUORUM` siguen disponibles.
+`docker compose start rabbitmq-1` lo reintegra. Las colas del sistema son
+`classic` y viven en el nodo 1: mientras está caído, catalog y orders no procesan.
 
 ## 2. Tres colas con su DLQ
 
@@ -74,5 +76,5 @@ La cola `QUORUM` muestra `members: [rabbit@rabbitmq-1, rabbit@rabbitmq-2]`: est�
 
 - **¿Por qué `autoheal` y no `pause_minority`?** Con dos nodos no hay mayoría: `pause_minority` pausa también al nodo que sobrevive. Se probó y el clúster quedaba sin nodos activos.
 - **¿Por qué no se puede crear una cola quorum con un nodo caído?** Raft necesita mayoría para elegir líder; con 1 de 2 no la hay. La API responde `503` y no deja restos.
-- **¿Por qué las colas del sistema son classic?** No se cambió su tipo para no alterar el comportamiento ya verificado; las colas quorum se crean desde el administrador.
+- **¿Por qué las colas del sistema son classic?** No se cambió su tipo para no alterar el comportamiento ya verificado. Consecuencia: si cae el nodo donde viven, catalog y orders se detienen hasta que vuelve (los eventos esperan en la outbox). Las colas quorum del administrador sí sobreviven a la caída de un nodo.
 - **¿Qué impide borrar `stock.reserve` desde la API?** Los prefijos reservados en `app.messaging.admin.reserved-prefixes`.

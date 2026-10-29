@@ -130,8 +130,14 @@ Con el perfil `local` de cada servicio (`mvn spring-boot:run`), la conexión usa
 - **Descubrimiento `classic_config`**: cada nodo conoce al otro por nombre (`rabbit@rabbitmq-1`, `rabbit@rabbitmq-2`). El nombre sale del `hostname` del contenedor, por eso está fijado en el compose.
 - **Erlang cookie compartida** (`RABBITMQ_ERLANG_COOKIE`): es el secreto que autoriza a un nodo a unirse. Debe ser igual en ambos y no se versiona.
 - **Particiones con `autoheal`**: con dos nodos no hay mayoría posible. `pause_minority` pausaría también al nodo que sobrevive; se probó y el clúster quedaba sin nodos activos. `autoheal` mantiene vivo al nodo restante y, tras un corte de red, reinicia el lado con menos clientes.
-- **Clientes con las dos direcciones** (`SPRING_RABBITMQ_ADDRESSES=rabbitmq-1:5672,rabbitmq-2:5672`): si un nodo cae, Spring se reconecta al otro y vuelve a declarar su topología.
-- **Replicación**: las colas del sistema son `classic` y viven en un nodo. Las colas `QUORUM` creadas con el administrador se replican en los dos (`members: [rabbit@rabbitmq-1, rabbit@rabbitmq-2]`). Una cola quorum **necesita mayoría para crearse**: con un nodo caído, el administrador responde `503` y no deja restos.
+- **Clientes con las dos direcciones** (`SPRING_RABBITMQ_ADDRESSES=rabbitmq-1:5672,rabbitmq-2:5672`): si un nodo cae, Spring reabre la conexión contra el otro.
+- **Qué sobrevive a la caída de un nodo y qué no**:
+  - Las colas del sistema (`stock.*`, `orders.*`) son `classic`: viven en un solo nodo, normalmente `rabbitmq-1`. Si ese nodo cae, **catalog y orders dejan de procesar** hasta que vuelve; los eventos esperan en la outbox de orders y nada se pierde. Es el mismo comportamiento que con un solo broker.
+  - Las colas `QUORUM` creadas con el administrador se replican en los dos nodos (`members: [rabbit@rabbitmq-1, rabbit@rabbitmq-2]`) y siguen disponibles con un nodo caído.
+  - Una cola quorum **necesita mayoría para crearse**: con un nodo caído, el administrador responde `503`.
+  - Llevar las colas del sistema a `QUORUM` es el paso siguiente; no se hizo para no cambiar un comportamiento ya verificado.
+- **Arranque**: catalog, orders y el administrador esperan a que **los dos** nodos estén sanos.
+- **Migración desde un solo broker**: el volumen `pedidos360_rabbitmq-data` se reemplaza por `rabbitmq-1-data` y `rabbitmq-2-data`. Antes de actualizar, vaciar las colas (o aceptar que los mensajes pendientes del volumen viejo quedan inaccesibles). El volumen viejo no se borra.
 
 ```bash
 docker compose exec rabbitmq-1 rabbitmqctl cluster_status        # Running Nodes: los dos
@@ -170,9 +176,9 @@ Clúster y administrador (2026-10-28, proyecto de compose aislado, `orders`, `ca
 | Escenario | Resultado |
 |---|---|
 | Arranque desde cero | `Running Nodes: rabbit@rabbitmq-1, rabbit@rabbitmq-2` |
-| Servicios contra el clúster | Arrancan sin errores AMQP; tras borrar los volúmenes se reconectan y redeclaran sus 15 colas |
+| Servicios contra el clúster | Arrancan sin errores AMQP; tras recrear el clúster vacío se reconectan y redeclaran sus 15 colas |
 | Cola `QUORUM` creada por el administrador | Réplicas en los dos nodos |
-| Nodo 1 detenido | Nodo 2 sigue activo; el administrador lee colas por el nodo 2 (`200`) y crea colas `classic` (`201`) |
+| Nodo 1 detenido | Nodo 2 sigue activo; el administrador lee colas por el nodo 2 (`200`) y crea colas `classic` (`201`). No se probó el procesamiento de catalog y orders con el nodo 1 caído: sus colas `classic` viven en ese nodo |
 | Cola `QUORUM` con un nodo caído | `503` con mensaje claro, sin cola ni DLQ a medias |
 | Nodo 1 vuelve | Se reintegra solo al clúster |
 

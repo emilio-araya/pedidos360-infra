@@ -25,7 +25,7 @@ app:
   messaging:
     admin:
       # Todos los nombres de RabbitMQ que usa este servicio, centralizados aquí.
-      dead-letter-exchange: pedidos360-admin.dlx
+      dead-letter-exchange: pedidos360.admin.dlx
       dead-letter-suffix: .dlq
       # Prefijos del sistema en marcha (stock.reserve, orders.stock-result,
       # pedidos360.events...): esta API nunca los crea, modifica ni elimina.
