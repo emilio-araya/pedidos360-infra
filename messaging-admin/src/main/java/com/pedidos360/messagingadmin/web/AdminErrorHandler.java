@@ -1,6 +1,7 @@
 package com.pedidos360.messagingadmin.web;
 
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
+import com.pedidos360.messagingadmin.admin.BrokerUnavailableException;
 import com.pedidos360.messagingadmin.admin.ProtectedResourceException;
 import com.pedidos360.messagingadmin.admin.QueueNotFoundException;
 import com.pedidos360.messagingadmin.admin.ResourceConflictException;
@@ -62,6 +63,11 @@ public class AdminErrorHandler {
     @ExceptionHandler({ProtectedResourceException.class, ResourceConflictException.class})
     ProblemDetail conflict(RuntimeException exception) {
         return problem(HttpStatus.CONFLICT, "Conflicto", exception.getMessage());
+    }
+
+    @ExceptionHandler(BrokerUnavailableException.class)
+    ProblemDetail brokerRefused(BrokerUnavailableException exception) {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "RabbitMQ no disponible", exception.getMessage());
     }
 
     @ExceptionHandler(AmqpConnectException.class)

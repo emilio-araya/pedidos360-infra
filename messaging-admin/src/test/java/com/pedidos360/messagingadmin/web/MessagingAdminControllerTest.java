@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.pedidos360.messagingadmin.admin.BindingSpec;
+import com.pedidos360.messagingadmin.admin.BrokerUnavailableException;
 import com.pedidos360.messagingadmin.admin.ExchangeSpec;
 import com.pedidos360.messagingadmin.admin.ProtectedResourceException;
 import com.pedidos360.messagingadmin.admin.QueueInfo;
@@ -199,5 +200,14 @@ class MessagingAdminControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(adminService).unbind(eq(new BindingSpec("pedidos360.events", "tickets.generate", "pedido.*")));
+    }
+
+    @Test
+    void answersServiceUnavailableWhenTheBrokerFails() throws Exception {
+        when(adminService.getQueue("tickets")).thenThrow(new BrokerUnavailableException("RabbitMQ rechazó la operación: INTERNAL_ERROR"));
+
+        mockMvc.perform(get("/api/admin/queues/tickets"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.detail").value("RabbitMQ rechazó la operación: INTERNAL_ERROR"));
     }
 }

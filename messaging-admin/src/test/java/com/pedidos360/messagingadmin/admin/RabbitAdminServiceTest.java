@@ -22,6 +22,13 @@ import org.springframework.amqp.core.Exchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.amqp.AmqpIOException;
+import com.rabbitmq.client.ShutdownSignalException;
+import com.rabbitmq.client.impl.AMQImpl;
+import java.io.IOException;
+import java.net.SocketException;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 
 /** What the service asks the broker to do. AmqpAdmin is a double: no broker needed. */
 class RabbitAdminServiceTest {
@@ -49,8 +56,8 @@ class RabbitAdminServiceTest {
 
         ArgumentCaptor<Queue> queues = ArgumentCaptor.forClass(Queue.class);
         verify(amqpAdmin, org.mockito.Mockito.times(2)).declareQueue(queues.capture());
-        Queue dlq = queues.getAllValues().get(0);
-        Queue main = queues.getAllValues().get(1);
+        Queue main = queues.getAllValues().get(0);
+        Queue dlq = queues.getAllValues().get(1);
         assertThat(dlq.getName()).isEqualTo("tickets.generate.dlq");
         assertThat(main.getName()).isEqualTo("tickets.generate");
         assertThat(main.isDurable()).isTrue();
@@ -160,5 +167,47 @@ class RabbitAdminServiceTest {
 
         assertThatThrownBy(() -> service.bind(new BindingSpec("pedidos360.events", "no.existe", "x")))
                 .isInstanceOf(QueueNotFoundException.class);
+    }
+
+    @Test
+    void declaresTheMainQueueBeforeItsDeadLetterQueueAndRollsBackWhenTheDlqFails() {
+        doThrow(channelClosed(541, "INTERNAL_ERROR")).when(amqpAdmin)
+                .declareQueue(org.mockito.ArgumentMatchers.argThat(q -> q != null && q.getName().endsWith(".dlq")));
+
+        assertThatThrownBy(() -> service.createQueue(new QueueSpec("tickets", true, true, QueueSpec.Type.CLASSIC, null, null)))
+                .isInstanceOf(BrokerUnavailableException.class);
+
+        var order = inOrder(amqpAdmin);
+        order.verify(amqpAdmin).declareQueue(org.mockito.ArgumentMatchers.argThat(q -> q != null && q.getName().equals("tickets")));
+        order.verify(amqpAdmin).deleteQueue("tickets");
+    }
+
+    @Test
+    void reportsAConflictOnlyWhenTheBrokerSaysPreconditionFailed() {
+        doThrow(channelClosed(406, "PRECONDITION_FAILED - inequivalent arg 'x-queue-type'"))
+                .when(amqpAdmin).declareQueue(any());
+        assertThatThrownBy(() -> service.createQueue(new QueueSpec("tickets", true, false, QueueSpec.Type.QUORUM, null, null)))
+                .isInstanceOf(ResourceConflictException.class)
+                .hasMessage("La cola tickets ya existe con otra configuración");
+    }
+
+    @Test
+    void reportsOtherBrokerRejectionsAsUnavailableWithTheBrokerReason() {
+        doThrow(channelClosed(541, "INTERNAL_ERROR - quorum queue cluster unavailable"))
+                .when(amqpAdmin).declareQueue(any());
+        assertThatThrownBy(() -> service.createQueue(new QueueSpec("tickets", true, false, QueueSpec.Type.QUORUM, null, null)))
+                .isInstanceOf(BrokerUnavailableException.class)
+                .hasMessageContaining("quorum queue cluster unavailable");
+    }
+
+    @Test
+    void reportsALostConnectionAsUnavailable() {
+        when(amqpAdmin.getQueueProperties("tickets")).thenThrow(new AmqpIOException(new SocketException("Connection reset")));
+        assertThatThrownBy(() -> service.getQueue("tickets")).isInstanceOf(BrokerUnavailableException.class);
+    }
+
+    private static AmqpIOException channelClosed(int code, String text) {
+        ShutdownSignalException signal = new ShutdownSignalException(false, false, new AMQImpl.Channel.Close(code, text, 50, 10), null);
+        return new AmqpIOException(new IOException(signal));
     }
 }

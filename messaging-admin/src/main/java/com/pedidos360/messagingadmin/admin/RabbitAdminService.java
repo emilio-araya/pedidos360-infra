@@ -1,8 +1,11 @@
 package com.pedidos360.messagingadmin.admin;
 
 import com.pedidos360.messagingadmin.config.MessagingAdminProperties;
+import com.rabbitmq.client.AMQP;
+import com.rabbitmq.client.ShutdownSignalException;
 import java.util.Properties;
-import org.springframework.amqp.AmqpIOException;
+import java.util.function.Supplier;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.core.AmqpAdmin;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
@@ -37,7 +40,7 @@ public class RabbitAdminService {
     /** Creates the queue and, when asked, its dead-letter queue bound to the dead-letter exchange. */
     public QueueInfo createQueue(QueueSpec spec) {
         requireNotReserved(spec.name());
-        if (amqpAdmin.getQueueProperties(spec.name()) != null) {
+        if (queueProperties(spec.name()) != null) {
             throw new ResourceConflictException("La cola " + spec.name() + " ya existe");
         }
 
@@ -52,21 +55,35 @@ public class RabbitAdminService {
             builder.withArgument("x-max-length", spec.maxLength());
         }
 
-        String deadLetterQueue = null;
-        if (spec.deadLetter()) {
-            deadLetterQueue = spec.name() + properties.deadLetterSuffix();
-            DirectExchange deadLetterExchange = new DirectExchange(properties.deadLetterExchange(), true, false);
-            amqpAdmin.declareExchange(deadLetterExchange);
-            amqpAdmin.declareQueue(QueueBuilder.durable(deadLetterQueue).build());
-            amqpAdmin.declareBinding(BindingBuilder.bind(new Queue(deadLetterQueue))
-                    .to(deadLetterExchange)
-                    .with(spec.name()));
+        String deadLetterQueue = spec.deadLetter() ? spec.name() + properties.deadLetterSuffix() : null;
+        if (deadLetterQueue != null) {
+            // The dead-letter exchange does not need to exist yet when the queue is declared.
             builder.deadLetterExchange(properties.deadLetterExchange())
                     .deadLetterRoutingKey(spec.name());
         }
 
-        declare(() -> amqpAdmin.declareQueue(builder.build()), "La cola " + spec.name());
+        String subject = "La cola " + spec.name();
+        call(() -> amqpAdmin.declareQueue(builder.build()), subject);
+        if (deadLetterQueue != null) {
+            try {
+                declareDeadLetterQueue(spec.name(), deadLetterQueue);
+            } catch (RuntimeException exception) {
+                // No half-created queue: without its DLQ, rejected messages would be lost.
+                call(() -> amqpAdmin.deleteQueue(spec.name()), subject);
+                throw exception;
+            }
+        }
         return new QueueInfo(spec.name(), deadLetterQueue, 0, 0);
+    }
+
+    private void declareDeadLetterQueue(String queue, String deadLetterQueue) {
+        String subject = "La cola " + deadLetterQueue;
+        DirectExchange deadLetterExchange = new DirectExchange(properties.deadLetterExchange(), true, false);
+        call(() -> amqpAdmin.declareExchange(deadLetterExchange), "El exchange " + properties.deadLetterExchange());
+        call(() -> amqpAdmin.declareQueue(QueueBuilder.durable(deadLetterQueue).build()), subject);
+        call(() -> amqpAdmin.declareBinding(BindingBuilder.bind(new Queue(deadLetterQueue))
+                .to(deadLetterExchange)
+                .with(queue)), subject);
     }
 
     /** Reading is allowed for every queue, system ones included, so they can be shown in a demo. */
@@ -83,10 +100,10 @@ public class RabbitAdminService {
     public void deleteQueue(String name) {
         requireNotReserved(name);
         requireQueue(name);
-        amqpAdmin.deleteQueue(name);
+        call(() -> amqpAdmin.deleteQueue(name), "La cola " + name);
         String deadLetterQueue = name + properties.deadLetterSuffix();
-        if (amqpAdmin.getQueueProperties(deadLetterQueue) != null) {
-            amqpAdmin.deleteQueue(deadLetterQueue);
+        if (queueProperties(deadLetterQueue) != null) {
+            call(() -> amqpAdmin.deleteQueue(deadLetterQueue), "La cola " + deadLetterQueue);
         }
     }
 
@@ -99,24 +116,25 @@ public class RabbitAdminService {
             case HEADERS -> ExchangeBuilder.headersExchange(spec.name());
         };
         Exchange exchange = builder.durable(spec.durable()).build();
-        declare(() -> amqpAdmin.declareExchange(exchange), "El exchange " + spec.name());
+        call(() -> amqpAdmin.declareExchange(exchange), "El exchange " + spec.name());
     }
 
     public void deleteExchange(String name) {
         requireNotReserved(name);
-        amqpAdmin.deleteExchange(name);
+        call(() -> amqpAdmin.deleteExchange(name), "El exchange " + name);
     }
 
     public void bind(BindingSpec spec) {
         requireBindable(spec);
         requireQueue(spec.queue());
-        declare(() -> amqpAdmin.declareBinding(binding(spec)),
+        call(() -> amqpAdmin.declareBinding(binding(spec)),
                 "El binding de " + spec.queue() + " a " + spec.exchange());
     }
 
     public void unbind(BindingSpec spec) {
         requireBindable(spec);
-        amqpAdmin.removeBinding(binding(spec));
+        call(() -> amqpAdmin.removeBinding(binding(spec)),
+                "El binding de " + spec.queue() + " a " + spec.exchange());
     }
 
     private Binding binding(BindingSpec spec) {
@@ -138,20 +156,52 @@ public class RabbitAdminService {
     }
 
     private Properties requireQueue(String name) {
-        Properties queue = amqpAdmin.getQueueProperties(name);
+        Properties queue = queueProperties(name);
         if (queue == null) {
             throw new QueueNotFoundException(name);
         }
         return queue;
     }
 
-    /** The broker closes the channel when a name exists with other settings: report it as a conflict. */
-    private void declare(Runnable declaration, String subject) {
+    private Properties queueProperties(String name) {
+        return call(() -> amqpAdmin.getQueueProperties(name), "La cola " + name);
+    }
+
+    private void call(Runnable operation, String subject) {
+        call(() -> {
+            operation.run();
+            return null;
+        }, subject);
+    }
+
+    /**
+     * Single translation point for broker failures. Only 406 PRECONDITION_FAILED
+     * means "exists with other settings"; any other channel close is a refusal we
+     * report with the broker's own reason, and a lost connection is transient.
+     */
+    private <T> T call(Supplier<T> operation, String subject) {
         try {
-            declaration.run();
-        } catch (AmqpIOException exception) {
-            throw new ResourceConflictException(subject + " ya existe con otra configuración");
+            return operation.get();
+        } catch (AmqpException exception) {
+            ShutdownSignalException signal = shutdownSignal(exception);
+            if (signal != null && signal.getReason() instanceof AMQP.Channel.Close close) {
+                if (close.getReplyCode() == AMQP.PRECONDITION_FAILED) {
+                    throw new ResourceConflictException(subject + " ya existe con otra configuración");
+                }
+                throw new BrokerUnavailableException("RabbitMQ rechazó la operación: " + close.getReplyText());
+            }
+            throw new BrokerUnavailableException(
+                    "No se pudo completar la operación en RabbitMQ; intenta de nuevo en unos segundos");
         }
+    }
+
+    private static ShutdownSignalException shutdownSignal(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ShutdownSignalException signal) {
+                return signal;
+            }
+        }
+        return null;
     }
 
     private static int count(Object value) {
