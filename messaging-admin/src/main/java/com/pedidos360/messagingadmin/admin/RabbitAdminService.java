@@ -79,10 +79,15 @@ public class RabbitAdminService {
                 count(queue.get(RabbitAdmin.QUEUE_CONSUMER_COUNT)));
     }
 
+    /** Also deletes the queue's dead-letter queue, so no orphan DLQ is left behind. */
     public void deleteQueue(String name) {
         requireNotReserved(name);
         requireQueue(name);
         amqpAdmin.deleteQueue(name);
+        String deadLetterQueue = name + properties.deadLetterSuffix();
+        if (amqpAdmin.getQueueProperties(deadLetterQueue) != null) {
+            amqpAdmin.deleteQueue(deadLetterQueue);
+        }
     }
 
     public void createExchange(ExchangeSpec spec) {

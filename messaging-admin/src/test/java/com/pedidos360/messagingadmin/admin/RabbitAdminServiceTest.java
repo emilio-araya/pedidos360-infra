@@ -112,6 +112,11 @@ class RabbitAdminServiceTest {
 
         service.deleteQueue("tickets");
         verify(amqpAdmin).deleteQueue("tickets");
+        verify(amqpAdmin, never()).deleteQueue("tickets.dlq");
+
+        when(amqpAdmin.getQueueProperties("tickets.dlq")).thenReturn(new Properties());
+        service.deleteQueue("tickets");
+        verify(amqpAdmin).deleteQueue("tickets.dlq");
 
         assertThatThrownBy(() -> service.deleteQueue("no.existe"))
                 .isInstanceOf(QueueNotFoundException.class)
