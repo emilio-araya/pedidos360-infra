@@ -27,6 +27,7 @@ Clona los cinco repositorios con esos nombres. No se versionan credenciales, `.e
 - RabbitMQ corre como **clúster de dos nodos** (`rabbitmq-1`, `rabbitmq-2`): ver [`docs/MENSAJERIA_RABBITMQ.md`](docs/MENSAJERIA_RABBITMQ.md).
 - [`messaging-admin/`](messaging-admin/README.md) es el microservicio que administra colas, exchanges y bindings por API REST.
 - Guion de demostración con los comandos de cada punto: [`docs/DEMO_RABBITMQ.md`](docs/DEMO_RABBITMQ.md).
+- Kafka corre junto a RabbitMQ para los **eventos de dominio de los pedidos**: RabbitMQ lleva los comandos (reserva de stock) y Kafka el historial de cambios de cada pedido, que `catalog` consume para su proyección de ventas. Un broker KRaft de un nodo (`kafka`), un job que crea los tópicos (`kafka-init`) y una Kafka UI de sólo lectura en `http://127.0.0.1:8086`. Contrato, garantías, verificación y replay: [`docs/MENSAJERIA_KAFKA.md`](docs/MENSAJERIA_KAFKA.md).
 
 ## Configuración local
 
@@ -71,6 +72,7 @@ docker compose --env-file .env -f docker-compose.yml down --volumes
 - Cada repositorio de aplicación tiene `publish-ecr.yml` para publicar su imagen en ECR con el mismo rol OIDC; Terraform crea los cuatro repositorios con cifrado y scan-on-push.
 - La configuración de Cognito, callbacks, PKCE y grupos está en `docs/CONFIGURACION_COGNITO.md`.
 - La mensajería con RabbitMQ (outbox, contrato de eventos, reintentos y DLQ) está en `docs/MENSAJERIA_RABBITMQ.md`.
+- Los eventos de dominio con Kafka (tópico `pedidos360.order-events`, outbox, consumidor idempotente y DLT) están en `docs/MENSAJERIA_KAFKA.md`.
 - La compra como invitado (enlace secreto, correo con Mailpit o SES, rutas públicas y throttling) está en `docs/COMPRA_INVITADO.md`.
 
 ## AWS

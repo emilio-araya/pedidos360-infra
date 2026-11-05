@@ -2,6 +2,8 @@
 
 Reserva de stock asíncrona entre `orders` y `catalog`, con outbox transaccional, reintentos con backoff exponencial y DLQ.
 
+> RabbitMQ lleva los **comandos** (reservar y liberar stock). Los **eventos de dominio** de los pedidos viajan por Kafka: ver [`MENSAJERIA_KAFKA.md`](MENSAJERIA_KAFKA.md). Los dos flujos son independientes.
+
 ## Qué problema resuelve
 
 Antes, aceptar un pedido llamaba por HTTP al catálogo **dentro** de la transacción local. Eran dos commits en dos sistemas sin transacción distribuida:

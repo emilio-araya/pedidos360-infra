@@ -105,6 +105,97 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  # Single-node Kafka in KRaft mode (broker + controller in one process, no
+  # ZooKeeper). It carries order domain events; RabbitMQ keeps the stock
+  # commands. Only on `backend`: the broker port is never published to the host.
+  kafka:
+    image: apache/kafka:4.3.2
+    hostname: kafka
+    environment:
+      # Fixed cluster id (base64 UUID from `kafka-storage.sh random-uuid`):
+      # the data volume is formatted once and reused across restarts.
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:-lt4pMihWTs2WdoOIy9jBqg}
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      # Clients inside the compose network reach the broker by its service name.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # One broker: internal topics cannot have more than one replica.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      # Topics are created only by kafka-init: a misspelled topic name fails
+      # loudly instead of silently creating a new, empty topic.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - backend
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  # One-shot job: creates the topics of the event contract and exits 0.
+  # `--if-not-exists` makes it idempotent, so every `up` can run it again.
+  kafka-init:
+    image: apache/kafka:4.3.2
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        set -e;
+        for topic in pedidos360.order-events pedidos360.order-events.DLT; do
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists
+        --topic "$$topic" --partitions 3 --replication-factor 1;
+        done;
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic pedidos360.order-events
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: "no"
+
+  # Kafka UI, published on loopback only (no authentication of its own).
+  # Like RabbitMQ, it also joins `egress` because Docker does not publish
+  # ports of a container attached only to `internal: true` networks.
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    environment:
+      KAFKA_CLUSTERS_0_NAME: pedidos360
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      # Read-only: browse topics, messages and consumer groups; offset resets
+      # and topic deletion are done explicitly with the Kafka CLI.
+      KAFKA_CLUSTERS_0_READONLY: "true"
+      DYNAMIC_CONFIG_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${KAFKA_UI_PORT:-8086}:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - backend
+      - egress
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
   # SMTP local para los correos de compra como invitado (voucher y reenvío de
   # enlace). Atrapa todos los mensajes: nunca entrega a buzones reales.
   # - SMTP 1025: solo en la red `backend`, sin puerto publicado en el host.
@@ -155,6 +246,8 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-pedidos360}
+      # Order domain events (docs/MENSAJERIA_KAFKA.md).
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     expose:
       - "8082"
     depends_on:
@@ -164,6 +257,8 @@ services:
         condition: service_healthy
       rabbitmq-2:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     networks:
       - backend
       - egress
@@ -198,6 +293,8 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-pedidos360}
+      # Order domain events (docs/MENSAJERIA_KAFKA.md).
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # Correo del voucher (compra como invitado). En local apunta a Mailpit;
       # en AWS las mismas variables apuntan al SMTP de Amazon SES.
       MAIL_HOST: ${MAIL_HOST:-mailpit}
@@ -219,6 +316,8 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     networks:
       - backend
       - egress
@@ -334,3 +433,5 @@ volumes:
     name: ${COMPOSE_PROJECT_NAME:-pedidos360}_rabbitmq-1-data
   rabbitmq-2-data:
     name: ${COMPOSE_PROJECT_NAME:-pedidos360}_rabbitmq-2-data
+  kafka-data:
+    name: ${COMPOSE_PROJECT_NAME:-pedidos360}_kafka-data

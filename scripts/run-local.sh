@@ -135,6 +135,7 @@ cat <<EOF
 Pedidos360 local quedó iniciado.
   Frontend: http://localhost:${FRONTEND_PORT:-4200}
   BFF:      http://localhost:${BFF_PORT:-8080}
+  Kafka UI: http://127.0.0.1:${KAFKA_UI_PORT:-8086} (sólo lectura)
 
 Solo frontend y BFF publican puertos, y ambos se limitan a 127.0.0.1.
 Oracle, catalog y orders no tienen puertos publicados; el tráfico de negocio entre
