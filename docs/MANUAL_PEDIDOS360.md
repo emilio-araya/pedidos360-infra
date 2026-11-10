@@ -1,10 +1,10 @@
 # Manual técnico de Pedidos360
 
-> **Alcance.** El sistema usa dos proveedores de identidad conviviendo: Entra ID en `/api/**` y Amazon Cognito en `/aws/api/**`, con cadenas de seguridad separadas. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
+> **Alcance.** La SPA se autentica únicamente con Microsoft Entra ID (`/api/**`). El backend conserva una segunda cadena de seguridad independiente para `/aws/api/**`, validada con tokens de Amazon Cognito, sin pantalla de acceso en la interfaz. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
 
 ## 1. Propósito del proyecto
 
-Pedidos360 es una aplicación web para consultar y administrar pedidos, productos, inventario y reservas de stock. El frontend es una SPA React + Vite + TypeScript con dos accesos independientes: Microsoft Entra ID para `/api/**` y Amazon Cognito para `/aws/api/**`. El backend está compuesto por un BFF Spring Boot, dos microservicios Spring Boot y Oracle.
+Pedidos360 es una aplicación web para consultar y administrar pedidos, productos, inventario y reservas de stock. El frontend es una SPA React + Vite + TypeScript que inicia sesión con Microsoft Entra ID para `/api/**`. El backend está compuesto por un BFF Spring Boot, dos microservicios Spring Boot y Oracle, y conserva además una cadena Cognito independiente para `/aws/api/**` sin cliente en la SPA.
 
 Este manual describe la organización del código, el flujo de autenticación, la ejecución local y las fronteras de seguridad. No contiene contraseñas, tokens, connection strings ni secretos de despliegue.
 
@@ -45,8 +45,8 @@ En local, el navegador usa `http://localhost:8080` como URL del BFF. En AWS, el 
 
 ## 4. Flujo de una solicitud
 
-1. React inicia sesión con Authorization Code + PKCE mediante MSAL para las rutas Entra `/api/**`, o mediante Cognito/OIDC para `/aws/api/**`.
-2. El cliente HTTP agrega el access token del proveedor seleccionado exclusivamente a su namespace.
+1. React inicia sesión con Authorization Code + PKCE mediante MSAL para las rutas Entra `/api/**`. La SPA no abre sesión de Cognito.
+2. El cliente HTTP agrega el access token de Entra exclusivamente a las rutas `/api/**`.
 3. API Gateway selecciona el authorizer según `/api/**` o `/aws/api/**` y valida el token en AWS.
 4. El BFF y el microservicio vuelven a validar issuer, firma, audience/client ID y vigencia; Cognito exige además `token_use=access`.
 5. El BFF conserva el prefijo del proveedor al reenviar la solicitud a orders o catalog usando la red privada.
@@ -64,12 +64,12 @@ El BFF no tiene JDBC, JPA, datasource ni credenciales de Oracle. Los controles d
 - Node.js 26 y npm para React/Vite.
 - Al menos 8 GB de memoria disponible para el stack con Oracle.
 - Microsoft Entra ID configurado para la SPA y la API.
-- Amazon Cognito configurado con App Client público, PKCE S256, callbacks exactos y grupos `Admin`, `Operador`, `Cliente`.
+- Amazon Cognito configurado con App Client público, PKCE S256 y grupos `Admin`, `Operador`, `Cliente` solo si se va a ejercitar la segunda cadena del backend; la SPA no lo necesita.
 
 ### Configuración
 
 1. Copiar `.env.example` a `.env`.
-2. Completar los identificadores de Entra/Cognito y las contraseñas locales de Oracle.
+2. Completar los identificadores de Entra, las variables Cognito del backend si se usa esa cadena y las contraseñas locales de Oracle.
 3. No compartir ni versionar `.env`.
 4. Ejecutar:
 
@@ -111,9 +111,7 @@ docker compose --env-file .env -f docker-compose.yml down --volumes
 - `src/App.tsx`: rutas públicas, rutas protegidas y guards.
 - `src/auth/msal.ts`: configuración de la SPA y authority `/v2.0`.
 - `src/auth/AuthContext.tsx`: cuenta activa, claims, roles, `oid`, login y logout de Entra.
-- `src/auth/CognitoAuthContext.tsx`: sesión, grupos y access token de Cognito.
-- `src/auth/cognito.ts`: configuración de Authorization Code + PKCE, sin client secret.
-- `src/auth/RedirectHandler.tsx`: callback de Entra; el callback Cognito vive en `/auth/cognito/callback`.
+- `src/auth/RedirectHandler.tsx`: callback de Entra.
 - `src/api/client.ts`: cliente `fetch`, Bearer y normalización de errores.
 - `src/api/services.ts`: contrato de pedidos y catálogo, normalización y filtros de cliente.
 - `src/pages/`: vistas React de login, dashboard, pedidos y catálogo.
@@ -130,28 +128,24 @@ La configuración se encuentra en `src/config/environment.ts`. Para un ambiente,
 - `API_BASE_URL`.
 - `REDIRECT_URI`.
 - `POST_LOGOUT_REDIRECT_URI`.
-- `COGNITO_USER_POOL_ID`, `COGNITO_USER_POOL_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_ISSUER`, `COGNITO_REDIRECT_URI`, `COGNITO_LOGOUT_URI` y `COGNITO_API_SCOPE`.
 
 La imagen Docker ejecuta `npm run generate:environment` antes de `npm run build`. Los valores deben estar disponibles durante el build; asignar una variable al contenedor en tiempo de ejecución no reescribe un bundle estático.
 
 ### MSAL y seguridad
 
-- La SPA es pública y usa Authorization Code + PKCE. Cognito usa PKCE S256 y nunca un client secret.
-- `redirectUri` y `postLogoutRedirectUri` deben coincidir exactamente con Entra; `cognitoRedirectUri` y `cognitoLogoutUri` deben coincidir exactamente con Cognito.
-- `cognito:groups` del access token es la única fuente de grupos Cognito; no se usa el ID token para autorizar API.
+- La SPA es pública y usa Authorization Code + PKCE con MSAL; no maneja client secrets ni tokens de Cognito.
+- `redirectUri` y `postLogoutRedirectUri` deben coincidir exactamente con la app registrada en Entra.
 - El scope local es `api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user`.
 - `MsalProvider` inicializa MSAL y procesa el callback una sola vez por instancia.
 - `AuthContext` adquiere el token silenciosamente y combina claims del identificador y del access token.
-- `oid` usa fallback a `sub` para Entra; Cognito usa `sub` directamente.
+- `oid` usa fallback a `sub` cuando Entra no emite `oid`.
 - La decodificación visual de un JWT no valida criptográficamente el token. La validación real se hace en API Gateway, BFF y microservicios.
 - Los servicios locales aceptan solo el issuer y la audiencia exactos del tenant en formato v2 o el formato v1 equivalente de Entra (`sts.windows.net` y `api://{client-id}`); no se validan comodines.
-- El código no contiene ni muestra contraseñas, client secrets ni tokens; Cognito usa `sessionStorage` con fallback de memoria y el frontend solo solicita el access token al proveedor activo.
+- El código no contiene ni muestra contraseñas, client secrets ni tokens; la SPA solo solicita el access token de Entra.
 
 ### Rutas principales
 
-- `/login`: inicio de sesión público con Entra o Cognito.
-- `/auth/cognito/callback`: callback de Cognito.
-- `/aws`: portal Cognito que usa exclusivamente `/aws/api/**`.
+- `/login`: inicio de sesión público con Microsoft Entra ID.
 - `/dashboard`: resumen y pedidos recientes; requiere sesión Entra.
 - `/orders`: lista, creación y seguimiento; requiere sesión.
 - `/catalog`: administración de productos y stock; requiere `Admin` u `Operador`.

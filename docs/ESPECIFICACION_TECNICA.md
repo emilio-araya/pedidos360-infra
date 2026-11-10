@@ -1,12 +1,11 @@
 # Especificación técnica compartida — Pedidos360
 
-> **Alcance.** El sistema usa dos proveedores de identidad conviviendo: Entra ID en `/api/**` y Amazon Cognito en `/aws/api/**`, con cadenas de seguridad separadas. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
+> **Alcance.** La SPA se autentica únicamente con Microsoft Entra ID (`/api/**`). El backend conserva una segunda cadena de seguridad independiente para `/aws/api/**`, validada con tokens de Amazon Cognito, sin pantalla de acceso en la interfaz. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
 
 ## Arquitectura
 
 ```text
 React + Vite + MSAL (Entra `/api`)
-React + Vite + Amplify/OIDC (Cognito `/aws/api`)
       │ Authorization: Bearer <access_token>
       ▼
 AWS API Gateway (HTTP API, authorizers JWT separados y CORS)
@@ -16,13 +15,15 @@ ms-pedidos360-bff (dos cadenas Spring Security)
       ├── ms-pedidos360-orders ─── Oracle
       └── ms-pedidos360-catalog ── Oracle
 
+Cadena adicional del backend, sin cliente en la SPA:
+      /aws/api/** ── Cognito (validación de tokens en el BFF)
 ```
 
 El BFF nunca se conecta a la base de datos. Los microservicios solo son accesibles dentro de la red privada.
 
 ## Roles
 
-Los roles de aplicación aparecen en `roles` para Entra y en `cognito:groups` para Cognito. Los grupos de Cognito tienen exactamente los mismos nombres y mayúsculas: `Admin`, `Operador` y `Cliente`.
+Los roles de aplicación aparecen en `roles` para Entra y en `cognito:groups` para Cognito. Los grupos de Cognito tienen exactamente los mismos nombres y mayúsculas: `Admin`, `Operador` y `Cliente`. Como la SPA solo emite tokens de Entra, en la interfaz se usan los roles de Entra; los grupos de Cognito solo aplican a la segunda cadena del backend.
 
 > **Criterio ante contradicciones de la guía:** la tabla final de diferenciación atribuye algunas acciones al Cliente que contradicen la descripción de actores y el acceso de la pantalla `/catalog`. Este proyecto aplica el principio de menor privilegio y usa las responsabilidades de actores: el Cliente crea y sigue sus pedidos; Admin y Operador gestionan el dominio; únicamente Admin/Operador administran productos y stock.
 
@@ -155,7 +156,7 @@ Respuesta de pedido:
 ## Identidad y JWT
 
 - Frontend SPA Entra: `frontend-pedidos360`, callback `/login`.
-- Frontend Cognito: App Client `example-client-id`, callback `/auth/cognito/callback`.
+- Frontend: no integra Cognito; la SPA no pide ni almacena tokens de ese proveedor.
 - APIscope Entra: `api://150f51db-4084-4979-b1a1-e6a6e7893a01/access_as_user`.
 - Audience esperado de Entra: identificador de la API en formato v2 o `api://{client-id}` cuando el registro de Entra emita un token v1.
 - Cognito: issuer `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example`, audience/client ID `example-client-id` y `token_use=access` obligatorio.
@@ -167,7 +168,7 @@ Respuesta de pedido:
 
 Variables principales:
 
-- Frontend: `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `API_SCOPE`, `API_BASE_URL`, `REDIRECT_URI`, `POST_LOGOUT_REDIRECT_URI`, `COGNITO_USER_POOL_ID`, `COGNITO_USER_POOL_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_ISSUER`, `COGNITO_REDIRECT_URI` y `COGNITO_LOGOUT_URI`.
+- Frontend: `ENTRA_TENANT_ID`, `ENTRA_CLIENT_ID`, `API_SCOPE`, `API_BASE_URL`, `REDIRECT_URI` y `POST_LOGOUT_REDIRECT_URI`.
 - BFF: `ENTRA_ISSUER`, `ENTRA_API_AUDIENCE`, `COGNITO_ISSUER`, `COGNITO_API_AUDIENCE`, `COGNITO_JWK_SET_URI`, `ORDERS_SERVICE_URL`, `CATALOG_SERVICE_URL` y `CORS_ALLOWED_ORIGINS`.
 - Microservicios: las variables Entra/Cognito anteriores y su configuración Oracle privada.
 

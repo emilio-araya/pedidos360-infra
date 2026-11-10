@@ -1,6 +1,6 @@
 # Despliegue en AWS
 
-> **Alcance.** El sistema usa dos proveedores de identidad conviviendo: Entra ID en `/api/**` y Amazon Cognito en `/aws/api/**`, con cadenas de seguridad separadas. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
+> **Alcance.** La SPA se autentica únicamente con Microsoft Entra ID (`/api/**`). El backend conserva una segunda cadena de seguridad independiente para `/aws/api/**`, validada con tokens de Amazon Cognito, sin pantalla de acceso en la interfaz. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
 
 ## Alcance
 
@@ -56,11 +56,11 @@ ENTRA_API_AUDIENCE=150f51db-4084-4979-b1a1-e6a6e7893a01
 
 No usar el secreto HMAC del perfil `local` en AWS. Antes de aplicar Terraform, confirmar que `pedidos360-api` emite access tokens v2 con el issuer y audience de las líneas anteriores. Si el registro emite v1 (`sts.windows.net` y `api://{client-id}`), ajustar el authorizer y los servicios de forma coordinada; no desactivar la validación JWT.
 
-## 1.1 Configurar Cognito para `/aws/api`
+## 1.1 Configurar la cadena Cognito del backend
 
-Seguir `docs/CONFIGURACION_COGNITO.md`. El App Client debe tener solo Authorization Code, PKCE S256, sin client secret, y callbacks exactos para `/auth/cognito/callback`. Los grupos `Admin`, `Operador` y `Cliente` se asignan a usuarios del User Pool configurado en cada entorno.
+Seguir `docs/CONFIGURACION_COGNITO.md`. El App Client debe tener solo Authorization Code, PKCE S256, sin client secret y con los grupos `Admin`, `Operador` y `Cliente` asignados a usuarios del User Pool. Esta cadena no se usa desde la SPA: no requiere callbacks de la interfaz, solo la validación de tokens en el backend.
 
-Las variables públicas para BFF, Catalog, Orders y frontend son:
+Las variables públicas para BFF, Catalog y Orders son:
 
 ```dotenv
 COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example
@@ -68,10 +68,9 @@ COGNITO_API_AUDIENCE=example-client-id
 COGNITO_JWK_SET_URI=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example/.well-known/jwks.json
 COGNITO_USER_POOL_ID=us-east-1_example
 COGNITO_USER_POOL_CLIENT_ID=example-client-id
-COGNITO_DOMAIN=us-east-1umehprydi.auth.us-east-1.amazoncognito.com
 ```
 
-Los servicios rechazan un token de Cognito en `/api/**` y un token de Entra en `/aws/api/**`. El frontend solo manda el access token, nunca el ID token.
+Los servicios rechazan un token de Cognito en `/api/**` y un token de Entra en `/aws/api/**`. La SPA solo manda el access token de Entra, nunca el ID token.
 
 ## 2. Red privada
 
@@ -210,9 +209,6 @@ El frontend se puede publicar en S3/CloudFront o hosting estático equivalente:
 - `API_BASE_URL=https://<API_GATEWAY_ENDPOINT>`.
 - `REDIRECT_URI=https://<FRONTEND_ORIGIN>/login`.
 - `POST_LOGOUT_REDIRECT_URI=https://<FRONTEND_ORIGIN>/login`.
-- `COGNITO_REDIRECT_URI=https://<FRONTEND_ORIGIN>/auth/cognito/callback`.
-- `COGNITO_LOGOUT_URI=https://<FRONTEND_ORIGIN>/login`.
-- `COGNITO_USER_POOL_ID`, `COGNITO_USER_POOL_CLIENT_ID`, `COGNITO_DOMAIN` e `COGNITO_ISSUER` con los valores públicos del App Client.
 
 No incluir secretos, connection strings ni client secrets en el bundle. Si la aplicación React usa configuración compilada, los valores deben estar presentes durante el build; una variable de runtime no reescribe por sí sola un bundle estático.
 
@@ -247,7 +243,7 @@ ENTRA_API_AUDIENCE=150f51db-4084-4979-b1a1-e6a6e7893a01
 ORACLE_HOST=<host de Oracle>
 ```
 
-No guardar AWS access keys, client secrets ni tokens en GitHub Secrets. El frontend requiere además sus variables públicas de build (`API_BASE_URL`, callbacks, App Client y dominio Cognito).
+No guardar AWS access keys, client secrets ni tokens en GitHub Secrets. El frontend requiere además sus variables públicas de build (`API_BASE_URL`, callbacks de Entra, tenant y client ID).
 
 ## 8. Secuencia de despliegue
 
@@ -257,7 +253,7 @@ No guardar AWS access keys, client secrets ni tokens en GitHub Secrets. El front
 4. Verificar que las tareas de catalog y orders inician sanas y que Flyway crea el esquema.
 5. Publicar las imágenes de `bff`, `catalog` y `orders` con `publish-ecr.yml` usando GitHub OIDC.
 6. Fijar `container_image_tag` al SHA publicado y volver a aplicar, para que el despliegue sea reproducible.
-7. Publicar el frontend con `deploy-frontend.yml` y registrar en Entra y en el App Client de Cognito los callbacks que entrega el output `frontend_cognito_redirect_uris`.
+7. Publicar el frontend con `deploy-frontend.yml` y registrar en Entra los callbacks del origen publicado.
 8. Ejecutar los smoke tests y las pruebas de seguridad de `docs/ENTREGA_Y_EVIDENCIAS.md`.
 
 ## 9. Verificación desde fuera

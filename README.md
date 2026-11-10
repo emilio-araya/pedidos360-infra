@@ -70,7 +70,7 @@ docker compose --env-file .env -f docker-compose.yml down --volumes
 - `ci.yml` valida Terraform, Docker Compose y scripts en cada push o pull request.
 - El workflow de despliegue AWS se ejecuta manualmente y usa GitHub OIDC; no requiere almacenar AWS access keys en el repositorio.
 - Cada repositorio de aplicación tiene `publish-ecr.yml` para publicar su imagen en ECR con el mismo rol OIDC; Terraform crea los cuatro repositorios con cifrado y scan-on-push.
-- La configuración de Cognito, callbacks, PKCE y grupos está en `docs/CONFIGURACION_COGNITO.md`.
+- La segunda cadena de identidad del backend (Cognito en `/aws/api/**`, PKCE y grupos) está en `docs/CONFIGURACION_COGNITO.md`. La SPA usa solo Entra ID.
 - La mensajería con RabbitMQ (outbox, contrato de eventos, reintentos y DLQ) está en `docs/MENSAJERIA_RABBITMQ.md`.
 - Los eventos de dominio con Kafka (tópico `pedidos360.order-events`, outbox, consumidor idempotente y DLT) están en `docs/MENSAJERIA_KAFKA.md`.
 - La compra como invitado (enlace secreto, correo con Mailpit o SES, rutas públicas y throttling) está en `docs/COMPRA_INVITADO.md`.

@@ -1,6 +1,6 @@
 # Reporte de validación local — Pedidos360
 
-> **Alcance.** El sistema usa dos proveedores de identidad conviviendo: Entra ID en `/api/**` y Amazon Cognito en `/aws/api/**`, con cadenas de seguridad separadas. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
+> **Alcance.** La SPA se autentica únicamente con Microsoft Entra ID (`/api/**`). El backend conserva una segunda cadena de seguridad independiente para `/aws/api/**`, validada con tokens de Amazon Cognito, sin pantalla de acceso en la interfaz. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
 
 **Fecha:** 2026-09-24  
 **Entorno:** Linux, Java 17.0.20.1, Maven 3.9.16, Node.js 26.10.0 y npm 12.1.0.
@@ -75,14 +75,15 @@ Durante esta revisión también se detectó y corrigió una incompatibilidad rea
 | Build parametrizable de React + Vite | Compila con IDs y URL de API sustituidos; imagen Nginx construida desde `dist/` |
 | Docker/Oracle | Stack integrado `healthy`: Oracle, catalog, orders, BFF y frontend; principals separados para catalog/orders |
 | Redirect URI SPA | Build Docker verificado con `http://localhost:4200/login`; el bundle no contiene `app.example.com` |
-| Callbacks de identidad | Entra procesa `/login`; Cognito procesa `/auth/cognito/callback`; 62 pruebas frontend aprobadas |
+| Callbacks de identidad | Entra procesa `/login`; la SPA no integra Cognito; 141 pruebas frontend aprobadas |
 | Compatibilidad JWT local | Validadores Backend aceptan v1/v2 exactos para el mismo tenant y API; token real debe comprobarse después del rebuild |
 
-## Integración Cognito añadida
+## Integración Cognito en el backend
+
+> **Estado actual (2026-11-10):** la SPA dejó de integrar Cognito y quedó con Entra ID como único proveedor visible. La segunda cadena sigue vigente en el backend y se verifica con sus pruebas. El párrafo siguiente describe el alcance original de la rama `feature/cognito-aws`.
 
 La rama `feature/cognito-aws` agrega el segundo proveedor sin cambiar el namespace de Entra:
 
-- frontend React con login Cognito Authorization Code + PKCE S256, callback separado `/auth/cognito/callback` y 62 pruebas frontend;
 - BFF, Catalog y Orders con cadenas/validadores separados para Entra `/api/**` y Cognito `/aws/api/**`;
 - validadores de issuer, audience/client ID, `token_use=access` y grupos `cognito:groups`;
 - Terraform con dos authorizers, rutas duplicadas y repositorios ECR;

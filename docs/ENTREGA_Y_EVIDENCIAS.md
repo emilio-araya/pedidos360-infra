@@ -1,6 +1,6 @@
 # Entrega y evidencias
 
-> **Alcance.** El sistema usa dos proveedores de identidad conviviendo: Entra ID en `/api/**` y Amazon Cognito en `/aws/api/**`, con cadenas de seguridad separadas. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
+> **Alcance.** La SPA se autentica únicamente con Microsoft Entra ID (`/api/**`). El backend conserva una segunda cadena de seguridad independiente para `/aws/api/**`, validada con tokens de Amazon Cognito, sin pantalla de acceso en la interfaz. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
 
 Este documento define el inventario, las verificaciones y el paquete de evidencia de Pedidos360. Una captura correcta de ejecución no sustituye las pruebas de seguridad, autorización, stock ni transiciones.
 
@@ -203,7 +203,7 @@ Las consultas SQL de Oracle deben mostrar valores antes/después usando el mismo
 
 ### AWS
 
-1. Configurar el App Client de Cognito con PKCE S256, sin client secret, callbacks exactos y grupos.
+1. Configurar el App Client de Cognito con PKCE S256, sin client secret y grupos (cadena del backend, sin cliente en la SPA).
 2. Exportar el plan de Terraform aprobado.
 3. Publicar las cuatro imágenes con los workflows `publish-ecr.yml` y GitHub OIDC; registrar tags/digests, no credenciales.
 4. Guardar identificadores no sensibles, definiciones de tareas versionadas y digest de imágenes.
@@ -254,7 +254,7 @@ La entrega está lista para aceptación cuando:
 - [ ] los cuatro proyectos construyen y sus pruebas automáticas pasan;
 - [ ] el contrato OpenAPI contiene exclusivamente las rutas públicas documentadas;
 - [ ] JWT, audiences, `token_use=access` y roles se validan en API Gateway y en cada frontera backend aplicable;
-- [ ] el App Client Cognito usa Authorization Code + PKCE S256, no tiene client secret y sus callbacks están registrados;
+- [ ] el App Client Cognito usa Authorization Code + PKCE S256 y no tiene client secret (cadena del backend, sin pantalla en la SPA);
 - [ ] las cuatro imágenes se construyen/publican en ECR mediante GitHub OIDC;
 - [ ] las capacidades por `Admin`, `Operador` y `Cliente` están probadas;
 - [ ] todas las transiciones legales e ilegales se comportan según la especificación;
@@ -273,5 +273,5 @@ La configuración de Terraform cubre red, runtime, entrada privada, secretos y f
 - [ ] plan revisado y aprobado, con el costo mensual estimado aceptado;
 - [ ] secretos de base de datos cargados y usuarios de aplicación creados en Oracle (no el maestro);
 - [ ] imágenes publicadas en ECR por OIDC y `container_image_tag` fijado al SHA;
-- [ ] callbacks de CloudFront registrados en la app de Entra y en el App Client de Cognito;
+- [ ] callbacks de CloudFront registrados en la app de Entra;
 - [ ] modelo de licencia de Oracle decidido antes de habilitar `create_rds_oracle`.
