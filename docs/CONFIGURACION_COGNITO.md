@@ -1,19 +1,19 @@
 # Configuración de Amazon Cognito
 
-> **Alcance.** El sistema usa dos proveedores de identidad conviviendo: Entra ID en `/api/**` y Amazon Cognito en `/aws/api/**`, con cadenas de seguridad separadas. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
+> **Alcance.** Esta guía documenta la segunda cadena de seguridad del backend: Amazon Cognito para `/aws/api/**`. La SPA no la usa; su único proveedor es Microsoft Entra ID en `/api/**`. Ver `GUIA_CASO_0_PEDIDOS360.md`, sección "Alcance de la identidad".
 
-Pedidos360 usa dos proveedores de identidad con namespaces separados:
+Pedidos360 usa dos cadenas de seguridad con namespaces separados, aunque solo Entra tiene cliente en la interfaz:
 
-| Namespace | Proveedor | Issuer | Rutas |
-|---|---|---|---|
-| `/api/**` | Microsoft Entra ID | `https://login.microsoftonline.com/1feca74f-8331-414a-bd8d-2d687b22a7b3/v2.0` | `/api/**` |
-| `/aws/api/**` | Amazon Cognito | `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example` | `/aws/api/**` |
+| Namespace | Proveedor | Issuer | Rutas | Cliente |
+|---|---|---|---|---|
+| `/api/**` | Microsoft Entra ID | `https://login.microsoftonline.com/1feca74f-8331-414a-bd8d-2d687b22a7b3/v2.0` | `/api/**` | SPA React |
+| `/aws/api/**` | Amazon Cognito | `https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example` | `/aws/api/**` | solo backend |
 
 Un token de un proveedor no se acepta en el namespace del otro. API Gateway, BFF, Catalog y Orders tienen authorizers/validadores separados.
 
 ## Valores públicos
 
-Estos identificadores no son secretos y pueden estar en variables de GitHub Actions o en el build de la SPA:
+Estos identificadores no son secretos y pueden estar en variables de GitHub Actions o en el entorno del backend:
 
 ```dotenv
 COGNITO_USER_POOL_ID=us-east-1_example
@@ -21,10 +21,6 @@ COGNITO_USER_POOL_CLIENT_ID=example-client-id
 COGNITO_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example
 COGNITO_JWK_SET_URI=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_example/.well-known/jwks.json
 COGNITO_API_AUDIENCE=example-client-id
-COGNITO_DOMAIN=us-east-1umehprydi.auth.us-east-1.amazoncognito.com
-COGNITO_REDIRECT_URI=http://localhost:4200/auth/cognito/callback
-COGNITO_LOGOUT_URI=http://localhost:4200/login
-COGNITO_API_SCOPE="openid email profile"
 COGNITO_AUTHORIZATION_SCOPES=["openid"]
 ```
 
@@ -32,19 +28,13 @@ COGNITO_AUTHORIZATION_SCOPES=["openid"]
 
 ## App Client
 
-En el App Client de Cognito configurar exactamente:
+El App Client define el audience de la cadena; la aplicación no inicia ningún flujo OAuth con él. En la configuración baseline:
 
-1. **Allowed callback URLs**:
-   - `http://localhost:4200/auth/cognito/callback`
-   - `https://<FRONTEND_ORIGIN>/auth/cognito/callback`
-2. **Allowed sign-out URLs**:
-   - `http://localhost:4200/login`
-   - `https://<FRONTEND_ORIGIN>/login`
-3. **OAuth grant types**: solo `Authorization code grant`.
-4. **PKCE**: habilitado y obligatorio con `S256`.
-5. **Client secret**: desactivado. La SPA es un cliente público.
-6. **OAuth scopes**: `openid`, `email` y `profile`.
-7. **Hosted UI**: habilitado con el dominio anterior.
+1. **OAuth grant types**: `Authorization code grant`, solo si se habilitará un cliente externo de pruebas.
+2. **PKCE**: `S256`.
+3. **Client secret**: desactivado.
+4. **OAuth scopes**: `openid`, `email` y `profile`.
+5. **Callbacks**: no se registran callbacks de la SPA, porque el frontend ya no redirige a Cognito.
 
 No agregar un client secret a Docker, GitHub, Terraform, `.env` versionado ni al bundle React.
 
@@ -58,16 +48,11 @@ Los grupos deben existir con mayúsculas exactas:
 
 Asignar cada usuario a uno de esos grupos. El claim `cognito:groups` del **access token** se convierte en `ROLE_Admin`, `ROLE_Operador` o `ROLE_Cliente`. Un grupo desconocido no concede permisos. Se recomienda un solo `Admin`; los demás usuarios deben ser `Operador` o `Cliente`.
 
-## Login y callback
+## Emisión de tokens para pruebas
 
-El frontend React usa Authorization Code + PKCE mediante Amplify. El token de Cognito se mantiene en `sessionStorage` (nunca en `localStorage`, código fuente, logs ni Terraform); el fallback de memoria se usa cuando el navegador no expone storage. El flujo de Cognito es independiente de MSAL:
+La SPA no inicia sesión con Cognito: no hay botón, callback ni almacenamiento de tokens de este proveedor. Para ejercitar la cadena del backend se obtiene un access token de prueba fuera de la aplicación, por ejemplo con `aws cognito-idp admin-initiate-auth` sobre un usuario del User Pool, y se envía como `Authorization: Bearer` contra `/aws/api/**`. Ese token no sirve en `/api/**`.
 
-1. El usuario pulsa **Acceder con Amazon Cognito**.
-2. Cognito devuelve a `/auth/cognito/callback`.
-3. La SPA procesa `code` y `state`, obtiene el access token y navega a `/aws`.
-4. Las llamadas de ese portal usan exclusivamente `/aws/api/**`.
-
-El callback de Entra continúa siendo `/login` y el callback de Cognito es separado para que MSAL no procese el código de Cognito.
+El callback de Entra sigue siendo `/login` y no se comparte con Cognito.
 
 ## Configuración del backend
 
@@ -91,4 +76,4 @@ No activar el perfil `local` en AWS. El HMAC local es solo para desarrollo.
 | Token sin grupo reconocido | 403 | 403 |
 | Token expirado o de otra audience | 401 | 401 |
 
-También comprobar que el callback exacto esté registrado. El error `redirect_mismatch` significa que la URL que Cognito está rechazando no coincide exactamente con una lista registrada.
+También comprobar que un token de Cognito sea rechazado en `/api/**` y que un token de Entra lo sea en `/aws/api/**`.

@@ -34,12 +34,8 @@ required_vars=(
   CORS_ALLOWED_ORIGINS
   COGNITO_USER_POOL_ID
   COGNITO_USER_POOL_CLIENT_ID
-  COGNITO_DOMAIN
   COGNITO_ISSUER
   COGNITO_API_AUDIENCE
-  COGNITO_REDIRECT_URI
-  COGNITO_LOGOUT_URI
-  COGNITO_API_SCOPE
 )
 
 for variable_name in "${required_vars[@]}"; do
@@ -76,12 +72,6 @@ expected_cognito_issuer="https://cognito-idp.us-east-1.amazonaws.com/${COGNITO_U
   fail "COGNITO_ISSUER debe ser $expected_cognito_issuer."
 [[ "$COGNITO_API_AUDIENCE" == "$COGNITO_USER_POOL_CLIENT_ID" ]] || \
   fail 'COGNITO_API_AUDIENCE debe coincidir con el App Client público en la configuración baseline.'
-[[ "$COGNITO_DOMAIN" != *http://* && "$COGNITO_DOMAIN" != *https://* ]] || \
-  fail 'COGNITO_DOMAIN debe ser solo el hostname de Hosted UI.'
-[[ "$COGNITO_REDIRECT_URI" == */auth/cognito/callback ]] || \
-  fail 'COGNITO_REDIRECT_URI debe ser /auth/cognito/callback.'
-[[ " $COGNITO_API_SCOPE " == *' openid '* ]] || \
-  fail 'COGNITO_API_SCOPE debe incluir openid.'
 
 validate_oracle_password() {
   local variable_name="$1"

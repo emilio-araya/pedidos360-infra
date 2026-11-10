@@ -1,6 +1,6 @@
 # Configuración de Microsoft Entra ID
 
-> Esta guía cubre exclusivamente el proveedor de las rutas `/api/**`. Las rutas `/aws/api/**` usan Amazon Cognito y se configuran en [`CONFIGURACION_COGNITO.md`](CONFIGURACION_COGNITO.md). No se intercambian tokens, audiences ni callbacks.
+> Esta guía cubre exclusivamente el proveedor de las rutas `/api/**`, el único que usa la SPA. Las rutas `/aws/api/**` conservan la cadena Amazon Cognito documentada en [`CONFIGURACION_COGNITO.md`](CONFIGURACION_COGNITO.md), sin cliente en la interfaz. No se intercambian tokens, audiences ni callbacks.
 
 Esta guía separa los dos registros que requiere Pedidos360:
 
