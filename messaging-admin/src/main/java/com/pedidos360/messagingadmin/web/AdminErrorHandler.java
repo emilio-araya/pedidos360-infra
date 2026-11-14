@@ -5,6 +5,13 @@ import com.pedidos360.messagingadmin.admin.BrokerUnavailableException;
 import com.pedidos360.messagingadmin.admin.ProtectedResourceException;
 import com.pedidos360.messagingadmin.admin.QueueNotFoundException;
 import com.pedidos360.messagingadmin.admin.ResourceConflictException;
+import com.pedidos360.messagingadmin.kafka.ConsumerGroupNotFoundException;
+import com.pedidos360.messagingadmin.kafka.GroupNotEmptyException;
+import com.pedidos360.messagingadmin.kafka.InvalidTopicSpecException;
+import com.pedidos360.messagingadmin.kafka.KafkaUnavailableException;
+import com.pedidos360.messagingadmin.kafka.PartitionsCannotDecreaseException;
+import com.pedidos360.messagingadmin.kafka.TopicAlreadyExistsException;
+import com.pedidos360.messagingadmin.kafka.TopicNotFoundException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -74,6 +81,27 @@ public class AdminErrorHandler {
     ProblemDetail brokerDown(AmqpConnectException exception) {
         return problem(HttpStatus.SERVICE_UNAVAILABLE, "RabbitMQ no disponible",
                 "No se pudo conectar con RabbitMQ; intenta de nuevo en unos segundos");
+    }
+
+    @ExceptionHandler({TopicNotFoundException.class, ConsumerGroupNotFoundException.class})
+    ProblemDetail kafkaNotFound(RuntimeException exception) {
+        return problem(HttpStatus.NOT_FOUND, "No encontrado", exception.getMessage());
+    }
+
+    @ExceptionHandler({TopicAlreadyExistsException.class, PartitionsCannotDecreaseException.class,
+            GroupNotEmptyException.class})
+    ProblemDetail kafkaConflict(RuntimeException exception) {
+        return problem(HttpStatus.CONFLICT, "Conflicto", exception.getMessage());
+    }
+
+    @ExceptionHandler(InvalidTopicSpecException.class)
+    ProblemDetail invalidTopic(InvalidTopicSpecException exception) {
+        return problem(HttpStatus.BAD_REQUEST, INVALID, exception.getMessage());
+    }
+
+    @ExceptionHandler(KafkaUnavailableException.class)
+    ProblemDetail kafkaDown(KafkaUnavailableException exception) {
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "Kafka no disponible", exception.getMessage());
     }
 
     private static String message(FieldError error) {
