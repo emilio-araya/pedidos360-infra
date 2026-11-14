@@ -160,6 +160,10 @@ services:
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists
         --topic "$$topic" --partitions 3 --replication-factor 1;
         done;
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics
+        --entity-name pedidos360.order-events --add-config retention.ms=604800000,cleanup.policy=delete;
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics
+        --entity-name pedidos360.order-events.DLT --add-config retention.ms=1209600000;
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic pedidos360.order-events
     depends_on:
       kafka:
@@ -407,6 +411,8 @@ services:
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:?Define RABBITMQ_USERNAME en .env}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?Define RABBITMQ_PASSWORD en .env}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-pedidos360}
+      # Kafka admin API (docs/KAFKA_ADMIN.md).
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     # The admin API can delete queues: loopback only, never a public interface.
     ports:
       - "127.0.0.1:${MESSAGING_ADMIN_PORT:-8085}:8085"
@@ -415,6 +421,8 @@ services:
         condition: service_healthy
       rabbitmq-2:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     networks:
       - backend
       - egress

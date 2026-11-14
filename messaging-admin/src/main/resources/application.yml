@@ -8,6 +8,12 @@ spring:
     password: ${RABBITMQ_PASSWORD:guest}
     virtual-host: ${RABBITMQ_VHOST:/}
     connection-timeout: 5s
+  kafka:
+    bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    admin:
+      properties:
+        request.timeout.ms: 10000
+        default.api.timeout.ms: 10000
 
 server:
   port: ${SERVER_PORT:8085}
@@ -36,3 +42,23 @@ app:
       # Exchanges del sistema a los que sí se pueden enlazar colas nuevas.
       bindable-exchanges:
         - pedidos360.events
+      kafka:
+        # Topics del sistema en marcha: se leen, pero esta API no los crea,
+        # modifica ni elimina (409). Mismo criterio que los prefijos Rabbit.
+        reserved-prefixes:
+          - pedidos360.
+          - orders.
+          - stock.
+          - __
+        # Únicas configuraciones de topic que esta API puede cambiar.
+        allowed-configs:
+          - retention.ms
+          - retention.bytes
+          - cleanup.policy
+          - segment.ms
+          - max.message.bytes
+          - min.insync.replicas
+        max-partitions: 1000
+        default-partitions: 3
+        default-replication-factor: 1
+        operation-timeout: 10s
