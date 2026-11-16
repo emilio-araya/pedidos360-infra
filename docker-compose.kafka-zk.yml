@@ -1,0 +1,104 @@
+# Alternativa ZooKeeper para la arquitectura Kafka.
+#
+# El stack principal (docker-compose.yml) corre Kafka en modo KRaft, que es el
+# único modo soportado por Kafka 4.x. Este archivo levanta la arquitectura
+# clásica —ZooKeeper + broker— por si la evaluación pide ZooKeeper de forma
+# explícita. Usa imágenes de Confluent porque la imagen oficial `apache/kafka`
+# ya no sabe arrancar en modo ZooKeeper.
+#
+#   docker compose -f docker-compose.kafka-zk.yml up -d
+#   docker compose -f docker-compose.kafka-zk.yml logs kafka-init
+#   docker compose -f docker-compose.kafka-zk.yml down -v
+#
+# Tiene su propio nombre de proyecto, red y volúmenes: convive con el stack
+# principal sin chocar en nombres ni en datos.
+name: pedidos360-kafka-zk
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.9.0
+    hostname: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: "2181"
+      ZOOKEEPER_TICK_TIME: "2000"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
+    networks:
+      - kafka-zk
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/2181'"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  # Un broker en modo ZooKeeper. Los tópicos del contrato los crea kafka-init,
+  # igual que en el stack principal.
+  kafka:
+    image: confluentinc/cp-kafka:7.9.0
+    hostname: kafka
+    environment:
+      KAFKA_BROKER_ID: "1"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - kafka-zk
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  # Mismos tópicos y mismas configuraciones que el job del stack principal.
+  kafka-init:
+    image: confluentinc/cp-kafka:7.9.0
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        set -e;
+        for topic in pedidos360.order-events pedidos360.order-events.DLT; do
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists
+        --topic "$$topic" --partitions 3 --replication-factor 1;
+        done;
+        kafka-configs --bootstrap-server kafka:9092 --alter --entity-type topics
+        --entity-name pedidos360.order-events --add-config retention.ms=604800000,cleanup.policy=delete;
+        kafka-configs --bootstrap-server kafka:9092 --alter --entity-type topics
+        --entity-name pedidos360.order-events.DLT --add-config retention.ms=1209600000;
+        kafka-topics --bootstrap-server kafka:9092 --describe --topic pedidos360.order-events
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka-zk
+    restart: "no"
+
+networks:
+  kafka-zk:
+    name: pedidos360-kafka-zk
+
+volumes:
+  zookeeper-data:
+    name: pedidos360-zk-zookeeper-data
+  zookeeper-log:
+    name: pedidos360-zk-zookeeper-log
+  kafka-data:
+    name: pedidos360-zk-kafka-data
