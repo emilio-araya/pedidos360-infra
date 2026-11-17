@@ -113,6 +113,28 @@ KAFKA_CLUSTER_ID=lt4pMihWTs2WdoOIy9jBqg
 
 > `KAFKA_CLUSTER_ID` queda grabado en el volumen al formatearlo. Cambiarlo con un volumen existente impide que el broker arranque: hay que volver al valor anterior o recrear el volumen `pedidos360_kafka-data`.
 
+### Variante con ZooKeeper
+
+El stack principal usa **KRaft**: Kafka 4.x ya no soporta ZooKeeper y no hay motivo técnico para volver atrás. Cuando se necesita la arquitectura clásica —ZooKeeper más brokers— está `docker-compose.kafka-zk.yml`:
+
+```bash
+docker compose -f docker-compose.kafka-zk.yml up -d
+docker compose -f docker-compose.kafka-zk.yml logs kafka-init    # tópicos creados
+docker compose -f docker-compose.kafka-zk.yml down -v
+```
+
+| Servicio | Imagen | Rol |
+|---|---|---|
+| `zookeeper` | `confluentinc/cp-zookeeper:7.9.0` | Almacén de metadatos en el puerto 2181, sólo en su red. |
+| `kafka` | `confluentinc/cp-kafka:7.9.0` | Broker en modo ZooKeeper (`KAFKA_ZOOKEEPER_CONNECT=zookeeper:2181`), Kafka 3.9. |
+| `kafka-init` | `confluentinc/cp-kafka:7.9.0` | Mismos tópicos y mismas configuraciones que el job del stack principal. |
+
+Detalles que importan:
+
+- **Imágenes de Confluent a propósito**: la imagen oficial `apache/kafka` ya sólo arranca en KRaft; con `KAFKA_ZOOKEEPER_CONNECT` falla con *"The kafka configuration file appears to be for a legacy cluster"*.
+- **Proyecto, red y volúmenes propios** (`pedidos360-kafka-zk`, `pedidos360-zk-*`): puede correr a la vez que el stack principal sin chocar en nombres ni en datos.
+- **No lo consumen los microservicios**: `catalog` y `orders` siguen apuntando al broker KRaft del stack principal. Esta variante existe para la arquitectura pedida, no para cambiar el runtime del sistema.
+
 ## Cómo verificar
 
 Levantar sólo Kafka:

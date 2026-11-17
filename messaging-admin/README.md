@@ -1,18 +1,21 @@
 # messaging-admin
 
-API REST que administra colas, exchanges y bindings de RabbitMQ para Pedidos360.
-Corre junto al clúster de dos nodos y nunca toca los nombres de los que depende
-el sistema en marcha.
+API REST que administra colas, exchanges y bindings de RabbitMQ, y tópicos y
+grupos de consumidores de Kafka, para Pedidos360. Corre junto al clúster de dos
+nodos y nunca toca los nombres de los que depende el sistema en marcha.
 
 ## Diseño
 
 | Capa | Clase | Responsabilidad |
 |---|---|---|
 | Web | `MessagingAdminController` | Rutas, verbos HTTP y códigos de estado. No conoce RabbitMQ. |
+| Web | `KafkaAdminController` | Rutas de Kafka; toda la lógica vive en el servicio. |
 | Web | `dto/*Request` | Validación de entrada con anotaciones de Bean Validation. |
 | Web | `AdminErrorHandler` | Cada falla se responde como `ProblemDetail` (RFC 9457) con un mensaje claro. |
 | Servicio | `RabbitAdminService` | Única clase que habla con `AmqpAdmin`: declara, consulta y elimina. |
-| Configuración | `MessagingAdminProperties` + `application.yml` | Todos los nombres de RabbitMQ en un solo lugar (`app.messaging.admin.*`). |
+| Servicio | `KafkaAdminService` | Reglas de Kafka: nombres reservados, validaciones, lag y offsets. |
+| Adaptador | `KafkaAdminClientOperations` | Única clase que habla con `AdminClient`, con timeout por operación. |
+| Configuración | `MessagingAdminProperties`, `KafkaAdminProperties` + `application.yml` | Nombres y límites en un solo lugar (`app.messaging.admin.*`). |
 
 ## API
 
@@ -65,14 +68,35 @@ curl -i -X DELETE $A/queues/stock.reserve        # 409: cola del sistema
 curl -i -X POST $A/queues -H 'Content-Type: application/json' -d '{"name":""}'   # 400
 ```
 
+## Kafka
+
+Ruta base: `/api/admin/kafka`. Crea y consulta tópicos, cambia configuraciones
+de una lista cerrada, amplía particiones y revisa o reinicia offsets de grupos
+de consumidores. Los topics del sistema (`pedidos360.order-events` y su `.DLT`)
+se leen pero nunca se modifican (`409`). El reinicio de offsets sólo se permite
+con el grupo en estado `EMPTY`.
+
+```bash
+K=http://localhost:8085/api/admin/kafka
+curl -i -X POST $K/topics -H 'Content-Type: application/json' \
+  -d '{"name":"tickets.events","partitions":3,"configs":{"retention.ms":"604800000"}}'
+curl -s  $K/consumer-groups/catalog-sales-projection
+curl -i -X POST $K/consumer-groups/catalog-sales-projection/offsets/reset \
+  -H 'Content-Type: application/json' \
+  -d '{"topic":"pedidos360.order-events","strategy":"EARLIEST"}'
+```
+
+Contrato completo, validaciones y estrategias de reset:
+[`../docs/KAFKA_ADMIN.md`](../docs/KAFKA_ADMIN.md).
+
 ## Ejecución
 
 ```bash
-docker compose up -d rabbitmq-1 rabbitmq-2 messaging-admin   # desde pedidos360-infra
+docker compose up -d rabbitmq-1 rabbitmq-2 kafka kafka-init messaging-admin   # desde pedidos360-infra
 # o contra un clúster ya levantado:
 RABBITMQ_ADDRESSES=localhost:5672 RABBITMQ_USERNAME=... RABBITMQ_PASSWORD=... \
-RABBITMQ_VHOST=pedidos360 mvn spring-boot:run
-mvn test   # no necesita broker: AmqpAdmin es un doble de prueba
+RABBITMQ_VHOST=pedidos360 SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:9092 mvn spring-boot:run
+mvn test   # Rabbit y servicio de Kafka sin broker; el adaptador usa un broker embebido
 ```
 
 ## Seguridad
