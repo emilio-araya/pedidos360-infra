@@ -1,8 +1,11 @@
 # Evidencia — Evaluación Parcial N.º 5 (Kafka)
 
 Registro de lo ejecutado y observado el **2026-11-18, 16:34 (UTC-3)**, en la máquina de
-desarrollo, con Docker 29.10.0 y Docker Compose 5.8.0. Actualizado el mismo día para añadir
-la corrida del cluster de 3 brokers (§2.7) y el estado escribible de las Kafka UI (§3 y §4).
+desarrollo, con Docker 29.10.0 y Docker Compose 5.8.0. Actualizado el mismo día para
+añadir: la corrida del cluster de 3 brokers y la prueba de caída de broker (§2.7); las
+Kafka UI escribibles (§3 y §4); el consumidor de **auditoría en código**
+(`pedidos360-audit`) y el flujo **notification-events** (§2.8 y §2.10) con corrida en
+vivo completa (invitado → ACEPTADO → correo en Mailpit).
 
 Todo lo que aparece abajo es salida real de comandos corridos contra los contenedores. No hay
 resultados supuestos. Lo que quedó pendiente está en la sección 5.
@@ -32,13 +35,13 @@ No forma parte del repositorio.
 | # | Indicador | Peso | Estado | Dónde está la evidencia |
 | --- | --- | --- | --- | --- |
 | 1 | Configuración del cliente Kafka | 12 % | Cumple | §2.1 |
-| 2 | Productores y consumidores para los tópicos | 12 % | Parcial (un tópico de dominio) | §2.2 |
+| 2 | Productores y consumidores para los tópicos | 12 % | Cumple (dos tópicos de negocio + DLT) | §2.2, §2.10 |
 | 3 | Microservicio administrador de Kafka | 6 % | Cumple | §2.3 |
-| 4 | Implementación de productores | 14 % | Cumple | §2.4 |
-| 5 | Implementación de consumidores | 14 % | Cumple | §2.5 |
+| 4 | Implementación de productores | 14 % | Cumple | §2.4, §2.10 |
+| 5 | Implementación de consumidores | 14 % | Cumple | §2.5, §2.10 |
 | 6 | Manejo de errores, logs y reintentos | 12 % | Cumple | §2.6 |
-| 7 | Retención, particiones y replicación | 12 % | Cumple (RF=3 con cluster de 3 brokers) | §2.7 |
-| 8 | Consumer Groups | 12 % | Cumple (demo) / parcial (código) | §2.8 |
+| 7 | Retención, particiones y replicación | 12 % | Cumple (RF=3, prueba de caída de broker) | §2.7 |
+| 8 | Consumer Groups | 12 % | Cumple (tres grupos, dos de ellos en código) | §2.8 |
 | 9 | Administración de tópicos y grupos | 6 % | Cumple | §2.9 |
 
 ---
@@ -80,14 +83,22 @@ Consola del productor que arrancó `orders` al publicar el primer evento:
 
 ### 2.2 Productores y consumidores para los tópicos
 
-Tópicos en uso hoy: un tópico de dominio (`pedidos360.order-events`) con su DLT compartida
-(`pedidos360.order-events.DLT`). El productor vive en `orders` (`KafkaOutboxPublisher`) y el
-consumidor en `catalog` (`SalesProjectionListener`).
+Dos tópicos de negocio con productor en `orders` (outbox transaccional) y consumidor en `catalog`/`orders`:
+
+- `pedidos360.order-events` — eventos de dominio del pedido. Productor: `KafkaOutboxPublisher`
+  (clave = `orderId`). Consumidor: `SalesProjectionListener` (grupo `catalog-sales-projection`)
+  para la proyección de ventas, y `AuditTrailListener` (grupo `pedidos360-audit`) para la auditoría.
+- `pedidos360.notification-events` — intención de notificación por correo a invitados.
+  Productor: el mismo outbox (columna `target_topic`, desde V6). Consumidor:
+  `NotificationListener` (grupo `pedidos360-notifications`), en `orders`.
+
+Más la DLT compartida `pedidos360.order-events.DLT` (destino de recuperación, no un flujo de negocio).
 
 ```text
 $ docker exec pedidos360-kafka-1 kafka-topics.sh --bootstrap-server localhost:9092 --describe
-Topic: pedidos360.order-events      PartitionCount: 3  ReplicationFactor: 1  Configs: cleanup.policy=delete,retention.ms=604800000
-Topic: pedidos360.order-events.DLT  PartitionCount: 3  ReplicationFactor: 1  Configs: retention.ms=1209600000
+Topic: pedidos360.order-events           PartitionCount: 3  ReplicationFactor: 1
+Topic: pedidos360.order-events.DLT       PartitionCount: 3  ReplicationFactor: 1
+Topic: pedidos360.notification-events    PartitionCount: 3  ReplicationFactor: 1
 ```
 
 ### 2.3 Microservicio administrador de Kafka
@@ -150,6 +161,17 @@ Partition:1  Offset:1  f888591a-d35a-4d7b-8dc9-e37c616813bf
 
 Los dos eventos del mismo pedido cayeron en la **misma partición (1)** y en orden: eso es la
 clave por `orderId` haciendo su trabajo (`KafkaOutboxPublisher`).
+
+El outbox enruta por fila (`target_topic`, V6): los eventos de dominio van a
+`pedidos360.order-events` y las intenciones de notificación (`NOTIFICATION_REQUESTED`, sólo
+pedidos de invitado en transiciones) a `pedidos360.notification-events`, siempre en la misma
+transacción que cambia el pedido. Evidencia en vivo (§2.10):
+
+```json
+{"eventId":"2599fe17-…","orderId":"6f4eef92-…","orderNumber":"PED-1F1F001A",
+ "status":"ACEPTADO","previousStatus":"CREADO","email":"ep5.demo@example.com",
+ "occurredAt":"2026-11-18T23:09:32.370508892Z"}
+```
 
 ### 2.5 Implementación de consumidores
 
@@ -274,40 +296,81 @@ El stack principal queda RF=1 por diseño (VM única / presupuesto EC2); la repl
 demuestra con `docker-compose.kafka-cluster.yml`, que convive con el resto sin tocar Oracle ni
 las réplicas de las aplicaciones.
 
+**Prueba de caída de broker (2026-11-18, misma corrida):**
+
+```text
+== ANTES ==
+Topic: pedidos360.order-events  PartitionCount: 3  ReplicationFactor: 3  Configs: min.insync.replicas=2,...
+	Partition: 0  Leader: 1  Replicas: 3,1,2  Isr: 1,2,3
+	Partition: 1  Leader: 1  Replicas: 1,2,3  Isr: 1,2,3
+	Partition: 2  Leader: 1  Replicas: 2,3,1  Isr: 1,2,3
+
+== docker stop pedidos360-kafka-cluster-kafka-3-1 ==
+Topic: pedidos360.order-events
+	Partition: 0  Leader: 1  Replicas: 3,1,2  Isr: 1,2
+	Partition: 1  Leader: 1  Replicas: 1,2,3  Isr: 1,2
+	Partition: 2  Leader: 1  Replicas: 2,3,1  Isr: 1,2
+
+== producer acks=all, con UN broker menos ==
+$ kafka-console-producer.sh --topic pedidos360.notification-events --producer-property acks=all
+{"eventType":"BROKER_DEATH_CHECK","detail":"escrito con kafka-3 caido"}
+== leido desde kafka-2 ==
+Partition:1  Offset:0  {"eventType":"BROKER_DEATH_CHECK","detail":"escrito con kafka-3 caido"}
+
+== docker start pedidos360-kafka-cluster-kafka-3-1 ; espera a healthy ==
+Topic: pedidos360.order-events
+	Partition: 0  Leader: 1  Replicas: 3,1,2  Isr: 1,2,3
+	Partition: 1  Leader: 1  Replicas: 1,2,3  Isr: 1,2,3
+	Partition: 2  Leader: 1  Replicas: 2,3,1  Isr: 1,2,3
+```
+
+Es decir: con RF=3 y `min.insync.replicas=2`, escribir con `acks=all` sobrevive a la pérdida del
+tercer broker y los datos siguen disponibles; al volver, el broker recupera su sitio en el ISR.
+Nota: el clúster también elevó `__consumer_offsets` a RF=3 con `min.insync.replicas=2`
+(`Configs: ...min.insync.replicas=2`), así que también los offsets de grupos sobreviven a la
+caída.
+
 ### 2.8 Consumer Groups
 
-Dos grupos leyendo el mismo tópico con offsets independientes:
+Tres grupos leyendo/interviniendo en el mismo contrato, dos de ellos en código:
 
 ```text
 $ kafka-consumer-groups.sh --list
-ep5-auditoria
 catalog-sales-projection
+pedidos360-audit
+pedidos360-notifications
 
-$ kafka-consumer-groups.sh --describe --all-groups
-catalog-sales-projection pedidos360.order-events 0  3  3  0
-catalog-sales-projection pedidos360.order-events 1  3  3  0
-catalog-sales-projection pedidos360.order-events 2  1  1  0
-ep5-auditoria            pedidos360.order-events 0  0  3  3
-ep5-auditoria            pedidos360.order-events 1  0  3  3
-ep5-auditoria            pedidos360.order-events 2  0  1  1
+$ kafka-consumer-groups.sh --describe --group pedidos360-audit
+GROUP            TOPIC                   PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG
+pedidos360-audit pedidos360.order-events 0          3               3               0
+pedidos360-audit pedidos360.order-events 1          5               5               0
+pedidos360-audit pedidos360.order-events 2          1               1               0
+
+$ kafka-consumer-groups.sh --describe --group pedidos360-notifications
+GROUP                    TOPIC                          PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG
+pedidos360-notifications pedidos360.notification-events  0          0               0               0
+pedidos360-notifications pedidos360.notification-events  1          1               1               0
+pedidos360-notifications pedidos360.notification-events  2          0               0               0
 ```
 
-`ep5-auditoria` quedó en offset 0 con lag 3 mientras `catalog-sales-projection` está al día en el
-final del log: cada grupo lleva su propio progreso. Ese desfase es, además, la huella del reset de
-offsets de §2.9.
+- `catalog-sales-projection` (catalog): proyecta ventas; lo consume todo el flujo.
+- `pedidos360-audit` (**código**): `AuditTrailListener`, persiste cada evento en la tabla
+  `audited_order_events` con la clave `event_id` (idempotente por construcción). Offsets 3/5/1,
+  lag 0 en las tres particiones tras procesar todos los eventos de la demo.
+- `pedidos360-notifications` (**código**): `NotificationListener`, envía un correo por
+  transición a invitados; offset 1 en la partición donde cayó `NOTIFICATION_REQUESTED`, lag 0.
 
-Reparto de particiones del grupo de la aplicación (3 particiones, 1 instancia):
+Los dos grupos en código llevan offsets **independientes**: `pedidos360-audit` consumió los
+mismos eventos que `catalog-sales-projection` sin compartir progreso y en paralelo con él.
 
-```text
-catalog-sales-projection: partitions assigned: [pedidos360.order-events-0, -1, -2]
-```
-
-**Nota honesta:** el segundo grupo se demuestra con un consumidor de consola. Un segundo grupo
-propio en el código (por ejemplo, auditoría o analítica) todavía no existe.
+Histórico: el grupo de consola `ep5-auditoria` se usó antes de tener el consumidor de
+auditoría para demostrar offsets independientes; ya no existe en el código ni en el clúster
+actual, el rol lo asume `pedidos360-audit`.
 
 ### 2.9 Administración de tópicos y Consumer Groups
 
-Reset de offsets sobre un grupo vacío (`ep5-auditoria`):
+Reset de offsets sobre un grupo vacío (`ep5-auditoria`, captura histórica; hoy el rol lo
+asume `pedidos360-audit`):
 
 ```text
 $ curl -s -X POST localhost:8085/api/admin/kafka/consumer-groups/ep5-auditoria/offsets/reset \
@@ -327,6 +390,52 @@ $ curl -s -X POST localhost:8085/api/admin/kafka/consumer-groups/catalog-sales-p
 {"title":"Conflicto","status":409,
  "detail":"El grupo catalog-sales-projection está en estado STABLE; detén sus consumidores antes de reiniciar los offsets"}
 ```
+
+El tópico nuevo queda protegido por el admin sin cambios: `pedidos360.` está reservado en
+`messaging-admin` (`application.yml`, `reserved-prefixes`), así que `pedidos360.notification-events`
+no se puede crear, modificar ni borrar desde la API.
+
+### 2.10 Segundo flujo de negocio: notificaciones a invitados (2026-11-18)
+
+Flujo completo ejecutado contra el stack local con perfil `local` (H2 + tokens HMAC):
+
+```text
+1. POST /api/guest-orders  {"email":"ep5.demo@example.com","items":[...],"notes":"demo EP5 notificaciones"}
+   → 201  {"orderNumber":"PED-1F1F001A","status":"CREADO", ...}
+
+2. PATCH /api/orders/6f4eef92-5428-4231-a603-5ddaab8257a9/status  {"status":"ACEPTADO"}
+   → 200  "estado: ACEPTADO"
+
+3. outbox (V6 target_topic) publicó pedidos360.notification-events:
+   Partition:1  Offset:0
+   {"eventId":"2599fe17-...","orderId":"6f4eef92-...","orderNumber":"PED-1F1F001A",
+    "status":"ACEPTADO","previousStatus":"CREADO","email":"ep5.demo@example.com",
+    "occurredAt":"2026-11-18T23:09:32.370508892Z"}
+
+4. Grupo pedidos360-notifications consumió y envió el correo; Mailpit (127.0.0.1:8025) registró:
+   - "Pedido PED-1F1F001A confirmado"                    (voucher, al crear)
+   - "Tu pedido PED-1F1F001A cambió a ACEPTADO"           (notification-events, al aceptar)
+
+5. orders log:
+   NotificationListener : Notificación de cambio de estado enviada para el pedido PED-1F1F001A (CREADO → ACEPTADO)
+
+6. El mismo aceptado movió la proyección de ventas:
+   {"productId":"17befa55-…","unitsSold":1,"unitsDelivered":0,"unitsCancelled":0,"netUnits":1}
+```
+
+Notas honestas del flujo:
+
+- El correo sólo va a pedidos de invitado (sólo ellos guardan `customer_email`); un pedido con
+  cuenta Entra ID no encola `NOTIFICATION_REQUESTED` (cubierto por test).
+- El cuerpo remite a la página genérica `/seguimiento`: el token de seguimiento crudo NUNCA se
+  persiste (sólo su hash), así que un aviso posterior no puede reconstruir el enlace del alta.
+- Pedidos recién creados NO encolan notificación (el voucher ya avisó); cada cambio de estado
+  posterior sí (ACEPTADO, EN_PREPARACION, DESPACHADO, ENTREGADO, CANCELADO).
+- `orders` no define una DLT para el tópico de notificaciones: ante fallos transitorios de SMTP
+  reintenta dos veces cada 2 s y descarta con error en el log, para no bloquear la partición por
+  un correo. El evento de dominio (orders → catalog) sigue garantizado por la outbox.
+- La proyección de ventas, la auditoría y la notificación conviven en el mismo pedido sin
+  pisarse: cada consumidor con su grupo.
 
 ---
 
@@ -370,20 +479,21 @@ habilitada, para administrar este clúster desde la interfaz.
 
 ## 5. Lo que queda parcial o pendiente
 
-1. **Segundo consumer group en código.** Hoy el segundo grupo es un consumidor de consola; no hay
-   un segundo consumidor propio.
-2. **Demo del frontend (login IDaaS + JWT).** La instancia EC2 volvió (2026-11-18 19:35):
+1. **Demo del frontend (login IDaaS + JWT).** La instancia EC2 volvió (2026-11-18 19:35):
    la web sirve (HTTP 200, `healthz` → `ok`), `/api/catalog/products?size=1` responde 200 con
    datos reales y `/api/health` exige autenticación (401). Detalle operativo: al reiniciar, el
    BFF tarda ~97 s en arrancar; las llamadas a `/api/*` durante esa ventana devuelven 502 y se
    resuelven solas. El login interactivo de Entra ID requiere una prueba con navegador (flujo
    OAuth) y no se puede grabar sin credenciales.
-3. **Reintentos con backoff en vivo.** El camino no reintentable se demostró en vivo (payload
+2. **Reintentos con backoff en vivo.** El camino no reintentable se demostró en vivo (payload
    inválido → DLT). El camino reintentable está cubierto por `SalesProjectionErrorHandlerTest`,
    no por una caída de base provocada a propósito.
 
 Nota aparte: la replicación ya está resuelta con `docker-compose.kafka-cluster.yml` (§2.7); el
-stack principal sigue en RF=1 a propósito (VM única).
+stack principal sigue en RF=1 a propósito (VM única), y el flujo de negocio documentado en §2.10
+corre sobre ese stack de un broker: el cluster de tres brokers demuestra la replicación, no el
+flujo E2E. Flyway en catalog queda diferido (decisión del grupo); Hibernate sigue en
+`ddl-auto: update` ahí, con `ddl-auto: validate` + Flyway en orders.
 
 ## 6. Cómo reproducir
 
@@ -408,6 +518,17 @@ curl -s localhost:8085/api/admin/kafka/consumer-groups
 docker exec pedidos360-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh \
   --bootstrap-server localhost:9092 --topic pedidos360.order-events --from-beginning \
   --formatter-property print.partition=true --formatter-property print.offset=true
+
+# flujo de notificaciones (§2.10): invitado → ACEPTADO → correo en Mailpit
+curl -sS -X POST localhost:8081/api/guest-orders -H 'Content-Type: application/json' \
+  -d '{"email":"tu@correo.cl","items":[{"productId":"<id>","quantity":1}],"notes":"demo"}'
+curl -sS -X PATCH localhost:8081/api/orders/<id>/status -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <operator-token>' -d '{"status":"ACEPTADO"}'
+curl -sS localhost:8025/api/v1/messages   # ver el correo "Tu pedido ... cambió a ACEPTADO"
+
+# auditoría: group offsets moviéndose en paralelo
+docker exec pedidos360-kafka-1 /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 --describe --group pedidos360-audit
 ```
 
 Los pedidos de prueba se crean con `pedidos360-bff/scripts/generate-local-token.py` y el perfil

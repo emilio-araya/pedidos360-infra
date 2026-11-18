@@ -28,12 +28,20 @@ flowchart LR
     subgraph Kafka["kafka (KRaft, 1 nodo)"]
         T["pedidos360.order-events<br/>3 particiones, clave = orderId"]
         D[pedidos360.order-events.DLT]
+        N["pedidos360.notification-events<br/>3 particiones, clave = orderId"]
     end
     subgraph catalog
         L["@KafkaListener<br/>grupo catalog-sales-projection"] --> P[("Proyección de ventas<br/>+ eventos procesados")]
+        A["@KafkaListener<br/>grupo pedidos360-audit"] --> AU[("audited_order_events<br/>idempotente por event_id")]
+    end
+    subgraph orders
+        NL["@KafkaListener<br/>grupo pedidos360-notifications"]
     end
     C --> T
+    C --> N
     T --> L
+    T --> A
+    N --> NL
     L -->|veneno o reintentos agotados| D
     UI["Kafka UI<br/>127.0.0.1:8086"] -.solo lectura.-> Kafka
 ```
@@ -46,9 +54,11 @@ flowchart LR
 | Clave del registro | `orderId` como texto: todos los eventos de un pedido caen en la misma partición y se leen en orden |
 | Valor | JSON (abajo) |
 | Tópico de errores | `pedidos360.order-events.DLT` (3 particiones) |
-| Grupo de catalog | `catalog-sales-projection` |
-| Publica | `orders`, desde la outbox `kafka_outbox_event` |
-| Consume | `catalog` |
+| Tópico de notificaciones | `pedidos360.notification-events` (3 particiones): intención de aviso por correo a invitados en cada cambio de estado |
+| Grupo de catalog | `catalog-sales-projection` (ventas) y `pedidos360-audit` (auditoría, `audited_order_events`) |
+| Grupo de orders | `pedidos360-notifications` (consume notification-events y envía el correo) |
+| Publica | `orders`, desde la outbox `kafka_outbox_event` (columna `target_topic`, desde V6) |
+| Consume | `catalog` (dos grupos), `orders` (uno) |
 
 ```json
 {
@@ -197,7 +207,10 @@ Como `catalog` registra los `eventId` ya aplicados, un replay sobre la misma bas
 ## Seguridad
 
 - El puerto del broker (9092) y el del controller (9093) no se publican al host: sólo son accesibles en la red interna `backend`.
-- La Kafka UI no tiene autenticación propia: se publica sólo en `127.0.0.1` y en modo sólo lectura. Como Docker no publica puertos de un contenedor atado únicamente a redes `internal: true`, la UI está también en `egress`; el broker no.
+- La Kafka UI no tiene autenticación propia: se publica sólo en `127.0.0.1` con escritura
+  habilitada (la pauta pide administrar desde la UI); nunca debe exponerse a la LAN o a una
+  IP pública. Como Docker no publica puertos de un contenedor atado únicamente a redes
+  `internal: true`, la UI está también en `egress`; el broker no.
 - Sin TLS ni SASL: el tráfico no sale de la red de Docker. En un entorno compartido habría que activar SASL/SCRAM o mTLS y ACLs por servicio.
 
 ## Verificación realizada
@@ -208,7 +221,7 @@ Como `catalog` registra los `eventId` ya aplicados, un replay sobre la misma bas
 |---|---|
 | Arranque desde volumen vacío | `kafka` healthy, `kafka-init` `Exited (0)`, `kafka-ui` healthy |
 | `--describe` de `pedidos360.order-events` | `PartitionCount: 3`, `ReplicationFactor: 1` |
-| `--list` | `pedidos360.order-events` y `pedidos360.order-events.DLT` |
+| `--list` | `pedidos360.order-events`, `pedidos360.order-events.DLT` y `pedidos360.notification-events` |
 | `kafka-init` ejecutado otra vez | Termina con código 0, sin errores (`--if-not-exists`) |
 | Producir y consumir un registro con clave en un tópico de prueba | Se lee `order-1	hello-kafka` |
 | Reset de offsets de un grupo (`--dry-run` y `--execute`) | Offset vuelve a 0 |
