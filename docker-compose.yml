@@ -173,6 +173,9 @@ services:
     restart: "no"
 
   # Kafka UI, published on loopback only (no authentication of its own).
+  # Write-enabled on purpose: the course requires administering topics and
+  # brokers from the UI. Safe because it never leaves loopback; deletions are
+  # still possible, so it stays off the LAN/EC2 public interface.
   # Like RabbitMQ, it also joins `egress` because Docker does not publish
   # ports of a container attached only to `internal: true` networks.
   kafka-ui:
@@ -180,9 +183,7 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: pedidos360
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
-      # Read-only: browse topics, messages and consumer groups; offset resets
-      # and topic deletion are done explicitly with the Kafka CLI.
-      KAFKA_CLUSTERS_0_READONLY: "true"
+      KAFKA_CLUSTERS_0_READONLY: "false"
       DYNAMIC_CONFIG_ENABLED: "false"
     ports:
       - "127.0.0.1:${KAFKA_UI_PORT:-8086}:8080"

@@ -8,7 +8,10 @@
 #
 #   docker compose -f docker-compose.kafka-zk.yml up -d
 #   docker compose -f docker-compose.kafka-zk.yml logs kafka-init
-#   docker compose -f docker-compose.kafka-zk.yml down -v
+#   docker compose -f docker-compose.kafka-zk.yml down
+#
+# Incluye una Kafka UI en http://127.0.0.1:8087 (solo loopback, escritura
+# habilitada) para administrar este clúster desde la interfaz.
 #
 # Tiene su propio nombre de proyecto, red y volúmenes: convive con el stack
 # principal sin chocar en nombres ni en datos.
@@ -90,6 +93,32 @@ services:
     networks:
       - kafka-zk
     restart: "no"
+
+  # Kafka UI para este clúster ZK: loopback solamente, escritura habilitada
+  # (el requisito de la pauta pide administrar brokers y tópicos desde la UI).
+  # En 8087 para no chocar con la UI del stack principal (8086). La red
+  # `kafka-zk` no es interna, así que el puerto se publica directamente.
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.5.0
+    environment:
+      KAFKA_CLUSTERS_0_NAME: pedidos360-zk
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_READONLY: "false"
+      DYNAMIC_CONFIG_ENABLED: "false"
+    ports:
+      - "127.0.0.1:${KAFKA_UI_ZK_PORT:-8087}:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - kafka-zk
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
 
 networks:
   kafka-zk:

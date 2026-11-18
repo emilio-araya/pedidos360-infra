@@ -1,0 +1,124 @@
+# Cluster Kafka de 3 brokers en modo KRaft (sin ZooKeeper).
+#
+# Existe para demostrar el factor de replicación que el stack principal no
+# puede mostrar: `docker-compose.yml` levanta un solo broker y crea los
+# tópicos con replication-factor 1. Este archivo levanta tres brokers y
+# crea los mismos tópicos con replication-factor 3, tolerando la pérdida de
+# uno (min.insync.replicas=2).
+#
+#   docker compose -f docker-compose.kafka-cluster.yml up -d
+#   docker compose -f docker-compose.kafka-cluster.yml logs kafka-init
+#   docker compose -f docker-compose.kafka-cluster.yml exec kafka-1 \
+#       /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe
+#   docker compose -f docker-compose.kafka-cluster.yml down
+#
+# Proyecto, red y volúmenes propios: convive con el stack principal y con el
+# Compose de ZooKeeper sin chocar. No toca Oracle ni las réplicas de las
+# aplicaciones; los brokers no publican puertos en el host.
+#
+# CLUSTER_ID es un id fijo base64 (generado con `kafka-storage.sh random-uuid`).
+# Los volúmenes se formatean una vez y se reutilizan entre reinicios.
+name: pedidos360-kafka-cluster
+
+x-kafka-node: &kafka-node
+  image: apache/kafka:4.3.2
+  environment: &kafka-env
+    CLUSTER_ID: ${KAFKA_CLUSTER_ID:-lt4pMihWTs2WdoOIy9jBqg}
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+    KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+    # Three brokers: internal topics replicate three ways (one can die).
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "3"
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "3"
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "2"
+    KAFKA_DEFAULT_REPLICATION_FACTOR: "3"
+    KAFKA_MIN_INSYNC_REPLICAS: "2"
+    KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    KAFKA_LOG_DIRS: /var/lib/kafka/data
+    KAFKA_HEAP_OPTS: -Xms512m -Xmx512m
+  networks:
+    - kafka-cluster
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1
+    interval: 10s
+    timeout: 10s
+    retries: 12
+    start_period: 30s
+  restart: unless-stopped
+
+services:
+  kafka-1:
+    <<: *kafka-node
+    hostname: kafka-1
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: "1"
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-1:9092
+    volumes:
+      - kafka-1-data:/var/lib/kafka/data
+
+  kafka-2:
+    <<: *kafka-node
+    hostname: kafka-2
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: "2"
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-2:9092
+    volumes:
+      - kafka-2-data:/var/lib/kafka/data
+
+  kafka-3:
+    <<: *kafka-node
+    hostname: kafka-3
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: "3"
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-3:9092
+    volumes:
+      - kafka-3-data:/var/lib/kafka/data
+
+  # Mismos tópicos y configuraciones que `kafka-init` del stack principal,
+  # pero replicados tres veces. `--if-not-exists` lo hace idempotente.
+  kafka-init:
+    image: apache/kafka:4.3.2
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        set -e;
+        for topic in pedidos360.order-events pedidos360.order-events.DLT; do
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 --create --if-not-exists
+        --topic "$$topic" --partitions 3 --replication-factor 3;
+        done;
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka-1:9092 --alter --entity-type topics
+        --entity-name pedidos360.order-events --add-config retention.ms=604800000,cleanup.policy=delete,min.insync.replicas=2;
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka-1:9092 --alter --entity-type topics
+        --entity-name pedidos360.order-events.DLT --add-config retention.ms=1209600000,min.insync.replicas=2;
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka-1:9092 --describe --topic pedidos360.order-events
+    depends_on:
+      kafka-1:
+        condition: service_healthy
+      kafka-2:
+        condition: service_healthy
+      kafka-3:
+        condition: service_healthy
+    networks:
+      - kafka-cluster
+    restart: "no"
+
+networks:
+  kafka-cluster:
+    name: pedidos360-kafka-cluster
+
+volumes:
+  kafka-1-data:
+    name: pedidos360-cluster-kafka-1-data
+  kafka-2-data:
+    name: pedidos360-cluster-kafka-2-data
+  kafka-3-data:
+    name: pedidos360-cluster-kafka-3-data
