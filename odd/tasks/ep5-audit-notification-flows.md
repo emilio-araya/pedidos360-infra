@@ -47,7 +47,7 @@ consumidor propio envía el correo (Mailpit en local, SES en AWS).
 - [x] T2 · S2,S3,S4 · orders · inline · V6 (target_topic), entity/publisher routing, enqueue on status change (guests), tests · 128/128
 - [x] T3 · S5 · orders · inline · Notification listener + renderer + notifier + tests · 128/128
 - [x] T4 · S2,S6 · infra · inline · kafka-init en 3 composes (topic + RF=3), evidencia EP5 + broker-death test en vivo
-- [ ] T5 · cierre · zip de entrega + commits en los 3 repos + push + mirror Engram
+- [x] T5 · cierre · zip de entrega + commits en los 3 repos + push + mirror Engram
 
 ## Log
 
