@@ -1,11 +1,13 @@
 # Evidencia — Evaluación Parcial N.º 5 (Kafka)
 
 Registro de lo ejecutado y observado el **2026-11-18, 16:34 (UTC-3)**, en la máquina de
-desarrollo, con Docker 29.10.0 y Docker Compose 5.8.0. Actualizado el mismo día para
-añadir: la corrida del cluster de 3 brokers y la prueba de caída de broker (§2.7); las
-Kafka UI escribibles (§3 y §4); el consumidor de **auditoría en código**
-(`pedidos360-audit`) y el flujo **notification-events** (§2.8 y §2.10) con corrida en
-vivo completa (invitado → ACEPTADO → correo en Mailpit).
+desarrollo, con Docker 29.10.0 y Docker Compose 5.8.0. Actualizaciones:
+
+- 2026-11-18 — corrida del cluster de 3 brokers con prueba de caída (§2.7); Kafka UI
+  escribibles (§3 y §4); consumidor de auditoría en código (`pedidos360-audit`) y flujo
+  notification-events (§2.8 y §2.10), invitado → ACEPTADO → correo en Mailpit.
+- 2026-11-19 — DLT para notificaciones + registro de entregas `notification_delivery`
+  (idempotencia, migración V7) en orders; tópico DLT también en los tres Compose (§2.11).
 
 Todo lo que aparece abajo es salida real de comandos corridos contra los contenedores. No hay
 resultados supuestos. Lo que quedó pendiente está en la sección 5.
@@ -91,6 +93,8 @@ Dos tópicos de negocio con productor en `orders` (outbox transaccional) y consu
 - `pedidos360.notification-events` — intención de notificación por correo a invitados.
   Productor: el mismo outbox (columna `target_topic`, desde V6). Consumidor:
   `NotificationListener` (grupo `pedidos360-notifications`), en `orders`.
+- `pedidos360.notification-events.DLT` — mensajes muertos (SMTP agotado o payload
+  inválido). Productor: `DeadLetterPublishingRecoverer` del error handler de la DLT.
 
 Más la DLT compartida `pedidos360.order-events.DLT` (destino de recuperación, no un flujo de negocio).
 
@@ -431,13 +435,84 @@ Notas honestas del flujo:
   persiste (sólo su hash), así que un aviso posterior no puede reconstruir el enlace del alta.
 - Pedidos recién creados NO encolan notificación (el voucher ya avisó); cada cambio de estado
   posterior sí (ACEPTADO, EN_PREPARACION, DESPACHADO, ENTREGADO, CANCELADO).
-- `orders` no define una DLT para el tópico de notificaciones: ante fallos transitorios de SMTP
-  reintenta dos veces cada 2 s y descarta con error en el log, para no bloquear la partición por
-  un correo. El evento de dominio (orders → catalog) sigue garantizado por la outbox.
+- `orders` define `pedidos360.notification-events.DLT`: los errores transitorios de SMTP
+  (2 reintentos cada 2 s) y los payloads inválidos terminan ahí, no en silencio (§2.11).
+  El evento de dominio (orders → catalog) sigue garantizado por la outbox.
 - La proyección de ventas, la auditoría y la notificación conviven en el mismo pedido sin
   pisarse: cada consumidor con su grupo.
 
 ---
+
+### 2.11 Resiliencia de notificaciones: DLT + idempotencia (2026-11-19)
+
+Actualización posterior a la puesta en producción del flujo de notificaciones:
+
+**DLT propia.** `pedidos360.notification-events.DLT` (3 particiones) fue creado por los
+Compose (RF=1 en principal/ZK, RF=3 + `min.insync.replicas=2` en el cluster, retention
+14 días) y cargado con un payload inválido de prueba contra el stack local:
+
+```text
+$ kafka-console-producer.sh --topic pedidos360.notification-events
+{"eventId":"no-es-un-uuid","orderId":"tampoco","orderNumber":123,"brokentype":true}
+
+$ kafka-console-consumer.sh --topic pedidos360.notification-events.DLT \
+    --from-beginning --max-messages 1 --formatter-property print.headers=true
+h7...s,kafka_dlt-original-topic:pedidos360.notification-events,
+kafka_dlt-original-partition:1,kafka_dlt-original-offset:0,
+kafka_dlt-original-timestamp-type:CreateTime,
+kafka_dlt-original-consumer-group:pedidos360-notifications
+{"eventId":"no-es-un-uuid","orderId":"tampoco","orderNumber":123,"brokentype":true}
+```
+
+Retención de la DLT: 14 días. Inspección y reproceso manual:
+
+```bash
+## ver mensajes muertos con sus headers originales
+docker exec pedidos360-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh \
+  --bootstrap-server localhost:9092 --topic pedidos360.notification-events.DLT \
+  --from-beginning --formatter-property print.headers=true \
+  --formatter-property print.partition=true --formatter-property print.offset=true
+
+## reprocesar: no hay replay automático; corregido el problema (p.ej. SMTP),
+## hay que reenviar el evento con corrección manual desde la DLT.
+```
+
+**Idempotencia de entrega (`notification_delivery`).** SMTP no ofrece
+exactly-once: una caída entre el envío aceptado y el commit del offset de Kafka
+vuelve a entregar el mismo evento. Migración `V7__create_notification_delivery.sql`:
+
+| columna | tipo | uso |
+|---|---|---|
+| `event_id` | VARCHAR(36) PK | clave natural del contrato (outbox) |
+| `order_number` / `recipient_email` | VARCHAR(40)/VARCHAR(254) | datos para el correo |
+| `status` | VARCHAR(16) | PENDING → PROCESSING → SENT/FAILED |
+| `attempts` | INTEGER | incrementa con cada intento, ligado a las reentregas |
+| `last_error` | VARCHAR(1000) | último error (SMTP, timeout, etc.) |
+| `sent_at` / `created_at` / `updated_at` | TIMESTAMP(6) WITH TIME ZONE | auditoría |
+
+Comportamiento verificado (integración, H2):
+
+- Una reentrega del mismo `event_id` **no reenvía el correo** (fila SENT gana).
+- Un fallo SMTP transitorio deja la fila FAILED y la reentrega posterior sí sale (SENT).
+- Un PROCESSING huérfano (> 10 min) puede reintentarse; la carrera por insertar la
+  misma fila la gana la primera y la segunda se omite.
+- La ventana residual SMTP-aceptado → SENT no se cierra del todo (inevitable);
+  se reduce al mínimo y queda documentada.
+
+Prueba de feliz camino tras la reconstrucción del backend local (2026-11-19):
+
+```text
+1. POST /api/guest-orders        → 201  PED-EA584DA1
+2. PATCH .../status {ACEPTADO}   → 200
+3. pedidos360-notifications offsets (partition 0: 0→1, lag 0 en las tres particiones)
+4. Mailpit: "Pedido PED-EA584DA1 confirmado"          (voucher)
+           "Tu pedido PED-EA584DA1 cambió a ACEPTADO" (notification-events, único)
+```
+
+Suite orders: 134/134 tests verdes (incluye `NotificationDeliveryIntegrationTest`
+e `NotificationListenerTest` actualizados). El flujo de negocio documentado sigue
+corriendo sobre el stack RF=1; el cluster RF=3 demuestra resiliencia y aloja también
+el tópico DLT desde su propia inicialización.
 
 ## 3. Kafka UI
 

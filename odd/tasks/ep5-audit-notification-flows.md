@@ -79,3 +79,24 @@ consumidor propio envía el correo (Mailpit en local, SES en AWS).
   creado no encola (el voucher ya avisa); el cuerpo remite a `/seguimiento` genérico
   (el token crudo nunca se persiste); fallos de SMTP: 2 reintentos cada 2 s y descarte
   con error en log, sin DLT propia (no bloquear la partición por un correo).
+
+## Addendum 2026-11-19 — Etapa 1 (resiliencia de notificaciones, informe de arquitectura)
+
+- **S1'** — DLT propia `pedidos360.notification-events.DLT`: DeadLetterPublishingRecoverer
+  con 2 reintentos cada 2 s (FixedBackOff), partición -1 (clave orderId). Payloads
+  inválidos también terminan en DLT (la excepción sube desde el listener).
+- **S2'** — Registro `notification_delivery` (V7, clave `event_id`): SENT nunca se
+  reenvía; PROCESSING con <10 min se omite (huérfano reintenta); PENDING/FAILED
+  reintentables; carrera por el PK gana la primera. SMTP no da exactly-once: la
+  ventana SMTP-aceptado→SENT queda documentada.
+- **S3'** — Migración `V7__create_notification_delivery.sql` en H2 (tests y demo) y
+  Oracle (productivo, pendiente de deploy autorizado).
+- **S4'** — Los tres Compose crean la DLT (RF=1/RF=3 + min.insync.replicas=2 en cluster,
+  retention 14 días).
+- **Evidencia viva (2026-11-19, local)**: payload inválido → DLT con headers
+  `kafka_dlt-original-*`; flujo feliz PED-EA584DA1 → ACEPTADO → mail único en Mailpit;
+  offsets grupo 0/2/0 lag 0; orders **134/134** tests.
+- **L7** Alcance: del informe del evaluador (etapa 1) se implementó sólo 1.1+1.2, por
+  aprobación del usuario. 2.1 (recuperación/antigüedad del outbox) y 4.1
+  (messaging-admin en la API, hoy protegido sólo por el bind a 127.0.0.1) quedan
+  post-entrega. Flyway de catalog diferido como decisión previa del usuario.

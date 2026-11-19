@@ -29,6 +29,7 @@ flowchart LR
         T["pedidos360.order-events<br/>3 particiones, clave = orderId"]
         D[pedidos360.order-events.DLT]
         N["pedidos360.notification-events<br/>3 particiones, clave = orderId"]
+        ND[pedidos360.notification-events.DLT]
     end
     subgraph catalog
         L["@KafkaListener<br/>grupo catalog-sales-projection"] --> P[("Proyección de ventas<br/>+ eventos procesados")]
@@ -42,6 +43,7 @@ flowchart LR
     T --> L
     T --> A
     N --> NL
+    NL -.->|rechazado o reintentos agotados| ND
     L -->|veneno o reintentos agotados| D
     UI["Kafka UI<br/>127.0.0.1:8086"] -.solo lectura.-> Kafka
 ```
@@ -55,6 +57,7 @@ flowchart LR
 | Valor | JSON (abajo) |
 | Tópico de errores | `pedidos360.order-events.DLT` (3 particiones) |
 | Tópico de notificaciones | `pedidos360.notification-events` (3 particiones): intención de aviso por correo a invitados en cada cambio de estado |
+| DLT de notificaciones | `pedidos360.notification-events.DLT` (3 particiones): mensajes muertos de la DLT (SMTP agotado o payload inválido); se envían con headers del origen |
 | Grupo de catalog | `catalog-sales-projection` (ventas) y `pedidos360-audit` (auditoría, `audited_order_events`) |
 | Grupo de orders | `pedidos360-notifications` (consume notification-events y envía el correo) |
 | Publica | `orders`, desde la outbox `kafka_outbox_event` (columna `target_topic`, desde V6) |

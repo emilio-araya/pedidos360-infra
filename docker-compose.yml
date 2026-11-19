@@ -156,7 +156,7 @@ services:
     command:
       - >-
         set -e;
-        for topic in pedidos360.order-events pedidos360.order-events.DLT pedidos360.notification-events; do
+        for topic in pedidos360.order-events pedidos360.order-events.DLT pedidos360.notification-events pedidos360.notification-events.DLT; do
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists
         --topic "$$topic" --partitions 3 --replication-factor 1;
         done;
@@ -166,6 +166,8 @@ services:
         --entity-name pedidos360.order-events.DLT --add-config retention.ms=1209600000;
         /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics
         --entity-name pedidos360.notification-events --add-config retention.ms=604800000,cleanup.policy=delete;
+        /opt/kafka/bin/kafka-configs.sh --bootstrap-server kafka:9092 --alter --entity-type topics
+        --entity-name pedidos360.notification-events.DLT --add-config retention.ms=1209600000;
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --describe --topic pedidos360.order-events
     depends_on:
       kafka:
