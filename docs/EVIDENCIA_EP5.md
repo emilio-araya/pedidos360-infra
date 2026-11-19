@@ -8,6 +8,8 @@ desarrollo, con Docker 29.10.0 y Docker Compose 5.8.0. Actualizaciones:
   notification-events (§2.8 y §2.10), invitado → ACEPTADO → correo en Mailpit.
 - 2026-11-19 — DLT para notificaciones + registro de entregas `notification_delivery`
   (idempotencia, migración V7) en orders; tópico DLT también en los tres Compose (§2.11).
+- 2026-11-19 — login interactivo de Entra ID reportado como funcional por el usuario
+  (verificación verbal, sin captura; §5).
 
 Todo lo que aparece abajo es salida real de comandos corridos contra los contenedores. No hay
 resultados supuestos. Lo que quedó pendiente está en la sección 5.
@@ -554,12 +556,13 @@ habilitada, para administrar este clúster desde la interfaz.
 
 ## 5. Lo que queda parcial o pendiente
 
-1. **Demo del frontend (login IDaaS + JWT).** La instancia EC2 volvió (2026-11-18 19:35):
-   la web sirve (HTTP 200, `healthz` → `ok`), `/api/catalog/products?size=1` responde 200 con
-   datos reales y `/api/health` exige autenticación (401). Detalle operativo: al reiniciar, el
-   BFF tarda ~97 s en arrancar; las llamadas a `/api/*` durante esa ventana devuelven 502 y se
-   resuelven solas. El login interactivo de Entra ID requiere una prueba con navegador (flujo
-   OAuth) y no se puede grabar sin credenciales.
+1. ~~Demo del frontend (login IDaaS + JWT)~~ — **cerrado con verificación verbal del
+   usuario el 2026-11-19**: el login interactivo de Entra ID funciona en su navegador.
+   Sin captura adjunta: el flujo OAuth contra el tenant no se automatiza desde la
+   máquina de desarrollo ni se grabó evidencia visual; lo registrado aquí es la
+   verificación reportada por el usuario, no una salida de comandos. El despliegue
+   (EC2) sirve la app (HTTP 200, `healthz` → `ok`, `/api/catalog/products` 200,
+   `/api/health` 401) y el bundle es el del rediseño (`index-XuBBQC_e.js`).
 2. **Reintentos con backoff en vivo.** El camino no reintentable se demostró en vivo (payload
    inválido → DLT). El camino reintentable está cubierto por `SalesProjectionErrorHandlerTest`,
    no por una caída de base provocada a propósito.
