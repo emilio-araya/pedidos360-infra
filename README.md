@@ -27,7 +27,7 @@ Clona los cinco repositorios con esos nombres. No se versionan credenciales, `.e
 - RabbitMQ corre como **clúster de dos nodos** (`rabbitmq-1`, `rabbitmq-2`): ver [`docs/MENSAJERIA_RABBITMQ.md`](docs/MENSAJERIA_RABBITMQ.md).
 - [`messaging-admin/`](messaging-admin/README.md) es el microservicio que administra colas, exchanges y bindings por API REST, y también tópicos y grupos de consumidores de Kafka.
 - Guion de demostración con los comandos de cada punto: [`docs/DEMO_RABBITMQ.md`](docs/DEMO_RABBITMQ.md).
-- Kafka corre junto a RabbitMQ para los **eventos de dominio de los pedidos**: RabbitMQ lleva los comandos (reserva de stock) y Kafka el historial de cambios de cada pedido, que `catalog` consume para su proyección de ventas. Un broker KRaft de un nodo (`kafka`), un job que crea los tópicos (`kafka-init`) y una Kafka UI de sólo lectura en `http://127.0.0.1:8086`. Contrato, garantías, verificación y replay: [`docs/MENSAJERIA_KAFKA.md`](docs/MENSAJERIA_KAFKA.md). Los tópicos y grupos de consumidores se administran desde `messaging-admin`: [`docs/KAFKA_ADMIN.md`](docs/KAFKA_ADMIN.md). Si se necesita la arquitectura clásica con ZooKeeper, `docker-compose.kafka-zk.yml` la levanta aparte, con su propia red y volúmenes.
+- Kafka corre junto a RabbitMQ para los **eventos de dominio de los pedidos**: RabbitMQ lleva los comandos (reserva de stock) y Kafka el historial de cambios de cada pedido, que `catalog` consume para su proyección de ventas. Un broker KRaft de un nodo (`kafka`), un job que crea los cuatro tópicos con sus dos `.DLT` (`kafka-init`) y una Kafka UI de sólo lectura en `http://127.0.0.1:8086`. Contrato, garantías, verificación y replay: [`docs/MENSAJERIA_KAFKA.md`](docs/MENSAJERIA_KAFKA.md). Los tópicos y grupos de consumidores se administran desde `messaging-admin`: [`docs/KAFKA_ADMIN.md`](docs/KAFKA_ADMIN.md). Si se necesita la arquitectura clásica con ZooKeeper, `docker-compose.kafka-zk.yml` la levanta aparte, con su propia red y volúmenes.
 
 ## Configuración local
 
@@ -39,7 +39,10 @@ chmod +x scripts/*.sh
 ./scripts/run-local.sh
 ```
 
-El Compose construye los cuatro componentes desde sus repositorios hermanos. Solo frontend y BFF publican puertos locales; Catalog, Orders y Oracle permanecen en redes privadas.
+El Compose construye los cuatro componentes desde sus repositorios hermanos. Solo frontend y BFF publican un puerto
+de aplicación en loopback; Catalog, Orders y Oracle quedan en la red interna (`expose`, sin puerto de host). Las
+herramientas de desarrollo también escuchan únicamente en `127.0.0.1`: Mailpit `8025`, Kafka UI `8086`,
+messaging-admin `8085`, management de RabbitMQ `15672`/`15673` y WireMock `8089`.
 
 El Compose también levanta Mailpit para los correos de la compra como invitado. Su SMTP (`1025`) solo es accesible dentro de Docker; los correos enviados se ven en `http://127.0.0.1:8025`. Las variables `MAIL_*` y `FRONTEND_PUBLIC_URL` tienen valores locales por defecto; el detalle y la configuración con Amazon SES están en [`docs/COMPRA_INVITADO.md`](./docs/COMPRA_INVITADO.md).
 
